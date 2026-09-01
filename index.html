@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Тикеты</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    color: #333;
+    padding: 20px;
+    margin: 0;
+  }
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  h1 {
+    text-align: center;
+    color: #2c3e50;
+  }
+  .ticket {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    margin-bottom: 15px;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+  .ticket:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .ticket-header {
+    padding: 15px 20px;
+    background: #ecf0f1;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid #3498db;
+  }
+  .ticket-title {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #2c3e50;
+  }
+  .ticket-meta {
+    font-size: 0.9em;
+    color: #7f8c8d;
+  }
+  .ticket-body {
+    padding: 20px;
+    display: none;
+    border-top: 1px solid #eee;
+  }
+  .ticket.open .ticket-body {
+    display: block;
+  }
+  .ticket-desc {
+    white-space: pre-wrap;
+    background: #f9f9f9;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: 0.95em;
+  }
+  .chat-title {
+    font-size: 1.1em;
+    margin-bottom: 15px;
+    color: #2c3e50;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 5px;
+  }
+  .chat-msg {
+    margin-bottom: 15px;
+    padding: 12px 15px;
+    background: #fff;
+    border: 1px solid #e1e8ed;
+    border-radius: 6px;
+    border-left: 4px solid #2ecc71;
+  }
+  .chat-meta {
+    font-size: 0.85em;
+    color: #95a5a6;
+    margin-bottom: 8px;
+  }
+  .chat-author {
+    font-weight: bold;
+    color: #34495e;
+  }
+  .chat-text {
+    white-space: pre-wrap;
+    font-size: 0.95em;
+  }
+  .chat-events {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #eee;
+    font-size: 0.85em;
+    color: #e74c3c;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Список тикетов</h1>
+  <div id="app"></div>
+</div>
+
+<script>
+  fetch('tickets_export.json')
+    .then(response => response.json())
+    .then(data => {
+      const app = document.getElementById('app');
+      
+      data.forEach(item => {
+        const t = item.ticket;
+        const chat = item.chat;
+        
+        let chatHTML = '';
+        if (chat && chat.length > 0) {
+          chatHTML = chat.map(c => `
+            <div class="chat-msg">
+              <div class="chat-meta">
+                <span class="chat-author">${c.author}</span> • ${c.date_raw}
+              </div>
+              <div class="chat-text">${c.text}</div>
+              ${c.events ? `<div class="chat-events">${c.events.join('<br>')}</div>` : ''}
+            </div>
+          `).join('');
+        } else {
+          chatHTML = '<p>Нет сообщений в чате.</p>';
+        }
+
+        const formattedDate = new Date(t.Created).toLocaleString('ru-RU', { 
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+        });
+
+        const ticketDiv = document.createElement('div');
+        ticketDiv.className = 'ticket';
+        ticketDiv.innerHTML = `
+          <div class="ticket-header" onclick="this.parentElement.classList.toggle('open')">
+            <div class="ticket-title">#${t.Id} — ${t.Name}</div>
+            <div class="ticket-meta">${t.Creator} • ${formattedDate}</div>
+          </div>
+          <div class="ticket-body">
+            <div class="ticket-desc"><strong>Описание:</strong><br><br>${t.Description || 'Нет описания'}</div>
+            <div class="chat-title">История переписки</div>
+            ${chatHTML}
+          </div>
+        `;
+        app.appendChild(ticketDiv);
+      });
+    })
+    .catch(error => {
+      document.getElementById('app').innerHTML = '<p style="color:red;">Ошибка загрузки данных. Убедись, что страница запущена через локальный сервер, а файл tickets_export.json находится в той же папке.</p>';
+    });
+</script>
+
+</body>
+</html>

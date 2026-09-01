@@ -1,0 +1,27 @@
+services:
+  intraservice-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: intraservice-bot:latest
+    container_name: intraservice-bot
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      OUTPUT_DIR: /app/exports
+    volumes:
+      - ./exports:/app/exports:rw
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os; assert os.path.isdir('/app/exports')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
