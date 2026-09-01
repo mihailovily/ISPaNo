@@ -35,91 +35,108 @@
 
 ## Требования
 
-- Python 3.11+ (в проекте указан Python >= 3.14, но для большинства задач достаточно 3.11/3.12)
-- доступ к сервису `https://sd.specint.ru`
-- рабочие учетные данные Intraservice
+### Для запуска с Docker (рекомендуется)
+- Docker и Docker Compose
 
-## Установка
+### Для локальной разработки (без Docker)
+- Python 3.12+
+- Poetry (для управления зависимостями)
 
-1. Склонируйте проект:
+## Установка и конфигурация
+
+### 1. Склонируйте проект
 
 ```bash
 git clone <repo-url>
-cd "Авто-парсинг тикетов"
+cd ISPaNo
 ```
 
-2. Создайте виртуальное окружение:
-
-```bash
-python -m venv .venv
-```
-
-3. Активируйте окружение:
-
-Для Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Для Windows CMD:
-
-```cmd
-.venv\Scripts\activate.bat
-```
-
-Для Bash/macOS:
-
-```bash
-source .venv/bin/activate
-```
-
-4. Установите зависимости:
-
-```bash
-pip install --upgrade pip
-pip install requests beautifulsoup4 python-dotenv
-```
-
-Или через проектный менеджер:
-
-```bash
-pip install .
-```
-
-## Конфигурация
-
-`.env`:
+### 2. Создайте файл конфигурации `.env`
 
 ```dotenv
 INTRASERVICE_LOGIN=your_login
 INTRASERVICE_PASSWORD=your_password
 ```
 
-Если `.env` не создан, скрипт запросит логин и пароль в интерактивном режиме при запуске.
 
-## Запуск парсера
+## Запуск с Docker (рекомендуется)
+
+### Быстрый старт
 
 ```bash
-python parser.py
+docker compose up -d
 ```
 
-Скрипт попросит указать дату отсечки. Формат:
+Это запустит бота в фоновом режиме. Проверьте статус:
 
-```text
-ДД.ММ.ГГГГ
-или
-ДД.ММ.ГГГГ ЧЧ:ММ
+```bash
+docker compose ps
 ```
 
-Пример:
+Просмотрите логи:
 
-```text
-20.08.2026
-20.08.2026 14:30
+```bash
+docker compose logs -f intraservice-bot
 ```
 
-Парсер выгружает тикеты, изменённые после указанной даты, и сохраняет результат в файл `tickets_export.json`.
+### Остановка контейнера
+
+```bash
+docker compose down
+```
+
+### Пересборка образа (после изменения кода)
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+### Экспортированные файлы
+
+Файлы экспорта сохраняются в локальную папку `./exports/` (настроено в `docker-compose.yml`):
+
+```bash
+ls -la ./exports/
+```
+
+## Локальный запуск (без Docker)
+
+### Для разработки
+
+Установите Poetry и зависимости:
+
+```bash
+pip install --upgrade pip poetry
+poetry install
+```
+
+## Запуск бота
+
+### С Docker Compose
+
+Убедитесь, что в файле `.env` указаны учетные данные:
+
+```bash
+docker compose up -d
+```
+
+Бот будет автоматически перезапускаться при сбое благодаря политике `restart: unless-stopped`.
+
+### Локально (без Docker)
+
+Активируйте виртуальное окружение и запустите:
+
+```bash
+poetry run python bot.py
+```
+
+Или если вы работаете в режиме разработки с Poetry:
+
+```bash
+poetry install
+poetry run python bot.py
+```
 
 ## Формат выходных данных
 
@@ -164,68 +181,123 @@ http://localhost:8000/
 
 Если все корректно, страница загрузит `tickets_export.json` и покажет список тикетов и переписку по ним.
 
-## Развертывание
+## Развертывание на сервер
 
-Так как проект представляет собой статический HTML+JSON + Python-скрипт, деплой обычно делается в два этапа:
+### Docker Compose на Ubuntu/Linux (рекомендуется)
 
-### 1. Локальный деплой
+Это самый надежный способ для production.
 
-Подходит для личной работы и ручного запуска:
-
-```bash
-python parser.py
-python -m http.server 8000
-```
-
-### 2. Серверный деплой (Nginx / простая статика)
-
-1. Скопируйте файлы проекта на сервер.
-2. Создайте `.env` с логином и паролем.
-3. Настройте статический сайт, например, через Nginx:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.ru;
-
-    root /var/www/tickets-parser;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ =404;
-    }
-}
-```
-
-4. Запускайте парсер по расписанию через cron или systemd:
+1. **Установите Docker и Docker Compose** (если еще не установлены):
 
 ```bash
-crontab -e
+# Ubuntu/Debian
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Добавьте пользователя в группу docker
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Установите Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-Пример запуска раз в час:
-
-```cron
-0 * * * * cd /var/www/tickets-parser && /usr/bin/python3 parser.py >> /var/log/tickets-parser.log 2>&1
-```
-
-### 3. Docker (опционально)
-
-Для стабильного запуска на сервере можно упаковать проект в контейнер. Базовый пример:
-
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY . /app
-RUN pip install --no-cache-dir requests beautifulsoup4 python-dotenv
-CMD ["python", "parser.py"]
-```
-
-Запуск:
+2. **Клонируйте проект на сервер:**
 
 ```bash
-docker build -t tickets-parser .
-docker run --rm -it --env-file .env tickets-parser
+git clone <repo-url> /opt/intraservice-bot
+cd /opt/intraservice-bot
+```
+
+3. **Создайте файл конфигурации:**
+
+```bash
+cat > .env << EOF
+INTRASERVICE_LOGIN=your_login
+INTRASERVICE_PASSWORD=your_password
+EOF
+
+chmod 600 .env
+```
+
+4. **Запустите сервис:**
+
+```bash
+docker compose up -d
+```
+
+5. **Проверьте статус:**
+
+```bash
+docker compose ps
+docker compose logs -f intraservice-bot
+```
+
+### Запуск бота как systemd сервиса
+
+Для автоматического запуска при перезагрузке сервера создайте файл `/etc/systemd/system/intraservice-bot.service`:
+
+```ini
+[Unit]
+Description=Intraservice Bot
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/intraservice-bot
+ExecStart=/usr/local/bin/docker-compose up
+ExecStop=/usr/local/bin/docker-compose down
+Restart=unless-stopped
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Включите и запустите сервис:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable intraservice-bot
+sudo systemctl start intraservice-bot
+sudo systemctl status intraservice-bot
+```
+
+### Мониторинг и логирование
+
+**Просмотр логов:**
+
+```bash
+# Последние 100 строк
+docker compose logs -f --tail=100
+
+# Логи конкретного сервиса
+docker compose logs intraservice-bot
+```
+
+**Состояние контейнера:**
+
+```bash
+docker compose ps
+docker inspect intraservice-bot
+```
+
+**Проверка healthcheck:**
+
+```bash
+docker compose ps
+# Статус должен быть "healthy"
+```
+
+### Обновление кода
+
+```bash
+cd /opt/intraservice-bot
+git pull origin main
+docker compose build --no-cache
+docker compose up -d
 ```
 
 ## Безопасность
@@ -244,15 +316,53 @@ docker run --rm -it --env-file .env tickets-parser
 
 ## Полезные команды
 
+### Docker Compose
+
 ```bash
-# запуск парсера
-python parser.py
+# Запуск в фоновом режиме
+docker compose up -d
 
-# запуск локального веб-сервера
-python -m http.server 8000
+# Остановка контейнера
+docker compose down
 
-# проверка состояния среды
+# Просмотр логов
+docker compose logs -f
+docker compose logs --tail=50
+
+# Пересборка образа
+docker compose build --no-cache
+
+# Проверка статуса
+docker compose ps
+
+# Перезапуск сервиса
+docker compose restart
+```
+
+### Локальный запуск
+
+```bash
+# Запуск бота
+poetry run python bot.py
+
+# Проверка версии Python
 python --version
+
+# Проверка установленных зависимостей
+poetry show
+```
+
+### Система
+
+```bash
+# Проверка прав доступа к .env
+ls -la .env
+
+# Просмотр свежих логов Docker
+docker compose logs -f --tail=100
+
+# Очистка неиспользуемых образов Docker
+docker image prune -a
 ```
 
 ## Контакты / поддержка
