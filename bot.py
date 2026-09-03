@@ -39,8 +39,6 @@ logger = logging.getLogger("intraservice-bot")
 
 
 def is_allowed(user_id: int) -> bool:
-    if not config.ALLOWED_TELEGRAM_USER_IDS:
-        return True
     return user_id in config.ALLOWED_TELEGRAM_USER_IDS
 
 
@@ -135,13 +133,14 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def build_application() -> Application:
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    app = Application.builder().token(config.require_telegram_bot_token()).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("export", export_command))
     return app
 
 
 def main() -> None:
+    config.require_allowed_telegram_user_ids()
     if not config.ALLOWED_TELEGRAM_USER_IDS:
         logger.warning(
             "ALLOWED_TELEGRAM_USER_IDS не задан - бот будет отвечать ЛЮБОМУ "
