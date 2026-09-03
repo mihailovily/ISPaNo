@@ -42,6 +42,40 @@ def is_allowed(user_id: int) -> bool:
     return user_id in config.ALLOWED_TELEGRAM_USER_IDS
 
 
+async def _update_progress(status_msg, progress_queue: asyncio.Queue[str | None]) -> None:
+    """Forward parser progress to Telegram without crossing thread boundaries."""
+    latest_line = None
+    while True:
+        line = await progress_queue.get()
+        if line is None:
+            if latest_line is not None:
+                try:
+                    await status_msg.edit_text(f"Обновление прогресса:\n{latest_line}")
+                except Exception:  # noqa: BLE001 - progress must not break export
+                    logger.exception("Failed to update export progress")
+            return
+
+        latest_line = line
+        try:
+            while True:
+                line = await asyncio.wait_for(progress_queue.get(), timeout=2.0)
+                if line is None:
+                    try:
+                        await status_msg.edit_text(f"Обновление прогресса:\n{latest_line}")
+                    except Exception:  # noqa: BLE001 - progress must not break export
+                        logger.exception("Failed to update export progress")
+                    return
+                latest_line = line
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            await status_msg.edit_text(f"Обновление прогресса:\n{latest_line}")
+        except Exception:  # noqa: BLE001 - progress must not break export
+            logger.exception("Failed to update export progress")
+        latest_line = None
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Привет! Я выгружаю тикеты из Intraservice и присылаю JSON.\n\n"
@@ -87,15 +121,17 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
-    # Прогресс из parser'а копим в список и время от времени подсовываем
-    # в статусное сообщение, чтобы не было ощущения, что бот завис.
-    progress_lines: list[str] = []
+    # Передаём прогресс из рабочего потока в event loop через thread-safe очередь.
+    loop = asyncio.get_running_loop()
+    progress_queue: asyncio.Queue[str | None] = asyncio.Queue()
+    progress_task = asyncio.create_task(_update_progress(status_msg, progress_queue))
 
     def log(line: str) -> None:
         logger.info(line)
-        progress_lines.append(line)
+        loop.call_soon_threadsafe(progress_queue.put_nowait, line)
 
-    loop = asyncio.get_running_loop()
+    result: list[dict] | None = None
+    error_message: str | None = None
     try:
         # requests/BeautifulSoup синхронные - гоняем их в отдельном потоке,
         # чтобы не блокировать event loop бота (и чтобы бот отвечал другим
@@ -109,11 +145,17 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             log,
         )
     except isp.LoginError as e:
-        await status_msg.edit_text(f"Не удалось авторизоваться в Intraservice: {e}")
-        return
+        error_message = f"Не удалось авторизоваться в Intraservice: {e}"
     except Exception as e:  # noqa: BLE001 - хотим сообщить пользователю о любой ошибке
         logger.exception("Ошибка при экспорте тикетов")
-        await status_msg.edit_text(f"Произошла ошибка при выгрузке: {e}")
+        error_message = f"Произошла ошибка при выгрузке: {e}"
+
+    finally:
+        loop.call_soon_threadsafe(progress_queue.put_nowait, None)
+        await progress_task
+
+    if error_message is not None:
+        await status_msg.edit_text(error_message)
         return
 
     if not result:
