@@ -24,21 +24,29 @@ COMMENT_DATE_RE_NO_YEAR = re.compile(r"(\d{1,2})\s+(\S+),\s+(\d{1,2}):(\d{2})")
 COMMENT_DATE_RE_WITH_YEAR = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4}),\s+(\d{1,2}):(\d{2})")
 
 
+class RequestTimeoutError(requests.Timeout):
+    """An Intraservice request exceeded its configured timeout."""
+
+
 class LoginError(RuntimeError):
     """Не удалось залогиниться в Intraservice (неверный логин/пароль и т.п.)."""
 
 
 def login(session: requests.Session, login_name: str, password: str) -> None:
     """Авторизация в Intraservice."""
-    resp = session.post(
-        config.BASE_URL + "/",
-        data={"login": login_name, "password": password},
-        headers={
-            "Referer": config.BASE_URL + "/",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        allow_redirects=True,
-    )
+    try:
+        resp = session.post(
+            config.BASE_URL + "/",
+            data={"login": login_name, "password": password},
+            headers={
+                "Referer": config.BASE_URL + "/",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            allow_redirects=True,
+            timeout=config.REQUEST_TIMEOUT,
+        )
+    except requests.Timeout as exc:
+        raise LoginError("Timed out while logging in to Intraservice.") from exc
     resp.raise_for_status()
 
     # Успешный логин отдаёт 302 -> /Task и ставит cookie .INTRASERVICE.
@@ -131,7 +139,12 @@ def fetch_tasks_page(session: requests.Session, page: int) -> dict:
         "nolayout": "true",
         "page": page,
     }
-    resp = session.request("GET", url, data=data)
+    try:
+        resp = session.request("GET", url, data=data, timeout=config.REQUEST_TIMEOUT)
+    except requests.Timeout as exc:
+        raise RequestTimeoutError(
+            f"Timed out while loading task list page {page}."
+        ) from exc
     resp.raise_for_status()
     return parse_json_or_die(resp, context=f"/api/Task (страница {page})")
 
@@ -187,7 +200,12 @@ def get_tickets_changed_after(session: requests.Session, cutoff: datetime,
 
 def get_ticket_chat(session: requests.Session, ticket_id, created_dt, upper_dt) -> list[dict]:
     url = f"{config.BASE_URL}/Task/View/{ticket_id}"
-    resp = session.get(url)
+    try:
+        resp = session.get(url, timeout=config.REQUEST_TIMEOUT)
+    except requests.Timeout as exc:
+        raise RequestTimeoutError(
+            f"Timed out while loading ticket {ticket_id}."
+        ) from exc
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -279,6 +297,8 @@ def export_tickets(login_name: str, password: str, cutoff: datetime,
 
             chat = get_ticket_chat(session, ticket_id, created_dt, upper_dt)
             time.sleep(config.REQUEST_DELAY)
+        except RequestTimeoutError:
+            raise
         except requests.RequestException as e:
             log(f"Ошибка запроса для тикета {ticket_id}: {e}")
             continue
@@ -326,7 +346,7 @@ def main():
 
     try:
         result = export_tickets(login_name, password, cutoff)
-    except LoginError as e:
+    except (LoginError, RequestTimeoutError) as e:
         sys.exit(str(e))
 
     out_dir = Path(config.OUTPUT_DIR)
