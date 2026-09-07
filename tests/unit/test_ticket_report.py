@@ -13,6 +13,7 @@ from ispano.ticket_report import REPORT_HEADERS, TicketReportRow, load_partner_a
 
 
 CARD_HTML = """
+<a href="/Task/index?tb_serviceid=27" title="Заявки на ТП 3-й линии в СПБ">Заявки на ТП 3-й линии в СПБ</a>
 <span id="tasktypespan">Стандартный HSM</span>
 <select id="statusid"><option>В работе</option><option selected>Требует уточнения</option></select>
 <div id="creator">Создана: 4 сентября 2026 19:00 <a title='ООО «Тест»'>ООО «Тест»</a></div>
@@ -24,7 +25,7 @@ class TicketCardParsingTests(unittest.TestCase):
     def test_parses_report_fields_from_ticket_page(self) -> None:
         card = parse_ticket_card(CARD_HTML, now=datetime(2026, 9, 7, 12))
         self.assertEqual(card.status, "Требует уточнения")
-        self.assertEqual(card.support_type, "Стандартный HSM")
+        self.assertEqual(card.support_type, "Заявки на ТП 3-й линии в СПБ")
         self.assertEqual(card.creator_organization, "ООО «Тест»")
         self.assertEqual(card.last_updated_at, datetime(2026, 9, 7, 11, 2))
 
@@ -46,7 +47,12 @@ class TicketReportTests(unittest.TestCase):
             TicketCard("В работе", "Стандартная", "ООО Неизвестная", None),
             aliases,
         )
-        self.assertIsNone(unknown.partner)
+        self.assertEqual(unknown.partner, "ООО Неизвестная")
+
+    def test_project_partner_aliases_are_loaded(self) -> None:
+        aliases = load_partner_aliases()
+        self.assertEqual(aliases["ооо \"специальная интеграция\""], "СпецИнт")
+        self.assertEqual(aliases["ооо система защиты данных"], "СЗД")
 
     def test_writes_copy_ready_workbook(self) -> None:
         row = TicketReportRow(20, "В работе", "Стандартная", "Партнер", datetime(2026, 9, 7, 11, 2))

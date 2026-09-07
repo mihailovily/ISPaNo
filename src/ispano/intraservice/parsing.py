@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -145,6 +146,26 @@ def _parse_created_at(soup: BeautifulSoup) -> datetime | None:
     creator = soup.find(id="creator")
     if creator is None:
         return None
+
+
+def _parse_support_type(soup: BeautifulSoup) -> str | None:
+    """Extract the support service name from the ticket's service link.
+
+    ``#tasktypespan`` contains the technical subtype (for example,
+    ``Стандартный``), not the support service used in the report. The report
+    value is the text of the link to ``/Task/index?tb_serviceid=...``.
+    """
+    for link in soup.find_all("a", href=True):
+        parsed_url = urlparse(str(link["href"]))
+        path = parsed_url.path.rstrip("/").lstrip("/").casefold()
+        if path != "task/index" or "tb_serviceid" not in parse_qs(parsed_url.query):
+            continue
+        value = link.get_text(" ", strip=True)
+        if not value:
+            value = str(link.get("title", "")).strip()
+        if value:
+            return value
+    return None
     match = CREATED_AT_RE.search(creator.get_text(" ", strip=True))
     if not match:
         return None
@@ -169,8 +190,7 @@ def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
         if selected is not None:
             status = selected.get_text(" ", strip=True) or None
 
-    type_node = soup.find(id="tasktypespan")
-    support_type = type_node.get_text(" ", strip=True) if type_node is not None else None
+    support_type = _parse_support_type(soup)
 
     creator_organization = None
     creator = soup.find(id="creator")

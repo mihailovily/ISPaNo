@@ -60,7 +60,10 @@ class TicketReportRow:
     def from_card(cls, ticket_id: int, card: TicketCard, aliases: dict[str, str]) -> "TicketReportRow":
         partner = None
         if card.creator_organization:
-            partner = aliases.get(_normalize_organization(card.creator_organization))
+            partner = aliases.get(
+                _normalize_organization(card.creator_organization),
+                card.creator_organization,
+            )
         return cls(ticket_id, card.status, card.support_type, partner, card.last_updated_at)
 
     def values(self) -> tuple[object, ...]:
@@ -98,7 +101,10 @@ class TicketReportExporter:
                 card = parse_ticket_card(client.get_ticket_page(ticket_id))
                 row = TicketReportRow.from_card(ticket_id, card, aliases)
                 rows.append(row)
-                if card.creator_organization and row.partner is None:
+                if (
+                    card.creator_organization
+                    and _normalize_organization(card.creator_organization) not in aliases
+                ):
                     unknown_organizations.add(card.creator_organization)
                 time.sleep(self.settings.request_delay)
         return rows, unknown_organizations
