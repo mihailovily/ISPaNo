@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Sequence
 from zoneinfo import ZoneInfo
 
@@ -17,7 +16,7 @@ from .intraservice.client import (
 )
 from .intraservice.parsing import parse_dot_datetime
 from .serialization import serialize_legacy, serialize_v2, write_json_export
-from .settings import AppSettings, ConfigurationError
+from .settings import AppSettings, ConfigurationError, resolve_output_dir
 from .ticket_report import TicketReportExporter, write_ticket_report
 
 
@@ -62,7 +61,11 @@ def run_export(args: argparse.Namespace) -> int:
         if args.format == "legacy"
         else serialize_v2(items, cutoff, settings.export.timezone)
     )
-    output_dir = settings.export.output_dir if not args.output_dir else Path(args.output_dir)
+    output_dir = (
+        settings.export.output_dir
+        if not args.output_dir
+        else resolve_output_dir(args.output_dir)
+    )
     path = write_json_export(payload, output_dir, update_latest=args.format == "v2")
     print(f"Готово. Сохранено {len(items)} тикетов в {path}")
     return 0

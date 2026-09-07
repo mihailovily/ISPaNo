@@ -51,7 +51,12 @@ poetry run ispano tickets 4672
 poetry run ispano bot
 ```
 
-По умолчанию экспорт записывается в `exports/tickets_export_YYYYMMDD_HHMMSS.json`, а после успешной записи — в `exports/latest.json`. `latest.json` обновляется атомарно и не изменяется при ошибке экспорта.
+По умолчанию экспорт записывается в папку `exports` внутри корня проекта:
+`exports/tickets_export_YYYYMMDD_HHMMSS.json`, а после успешной записи — в
+`exports/latest.json`. Относительный `OUTPUT_DIR` также разрешается от корня
+проекта. Значение `/app/exports` используется Docker и при локальном запуске
+автоматически сопоставляется с `<корень проекта>/exports`.
+`latest.json` обновляется атомарно и не изменяется при ошибке экспорта.
 
 Старые команды остаются рабочими:
 

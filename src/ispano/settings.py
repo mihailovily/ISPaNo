@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CONTAINER_OUTPUT_DIR = "/app/exports"
+
 
 class ConfigurationError(ValueError):
     """Raised when environment configuration is missing or invalid."""
@@ -71,6 +74,22 @@ def _allowlist() -> frozenset[int]:
             "Некорректный ALLOWED_TELEGRAM_USER_IDS: " + ", ".join(repr(x) for x in invalid)
         )
     return frozenset(values)
+
+
+def resolve_output_dir(value: str | os.PathLike[str] | None) -> Path:
+    """Resolve export paths relative to the project and normalize Docker's path.
+
+    ``/app/exports`` is the container path used by Docker Compose. When the
+    same .env file is used on Windows, pathlib would otherwise turn it into
+    ``C:\\app\\exports`` outside the repository.
+    """
+    raw_value = str(value or "exports").strip() or "exports"
+    normalized = raw_value.replace("\\", "/").rstrip("/")
+    if normalized == CONTAINER_OUTPUT_DIR:
+        return PROJECT_ROOT / "exports"
+
+    output_dir = Path(raw_value)
+    return output_dir if output_dir.is_absolute() else PROJECT_ROOT / output_dir
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +156,7 @@ class ExportSettings:
         except ZoneInfoNotFoundError as exc:
             raise ConfigurationError(f"Неизвестная временная зона INTRASERVICE_TIMEZONE: {timezone}") from exc
         return cls(
-            output_dir=Path(_env("OUTPUT_DIR", "exports") or "exports"),
+            output_dir=resolve_output_dir(_env("OUTPUT_DIR", "exports")),
             default_lookback_hours=_positive_int("DEFAULT_LOOKBACK_HOURS", 24),
             timezone=timezone,
         )
