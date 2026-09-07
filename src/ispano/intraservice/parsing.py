@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -25,6 +26,22 @@ MONTHS_RU = {
 }
 COMMENT_DATE_RE_NO_YEAR = re.compile(r"(\d{1,2})\s+(\S+),\s+(\d{1,2}):(\d{2})")
 COMMENT_DATE_RE_WITH_YEAR = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4}),\s+(\d{1,2}):(\d{2})")
+CREATED_AT_RE = re.compile(
+    r"Создана:\s*(\d{1,2})\s+(\S+)\s+(\d{4})\s+(\d{1,2}):(\d{2})", re.IGNORECASE
+)
+# IntraService emits relative links (``Task/view/4671``) in the list, while
+# other installations/fixtures may use absolute-path links (``/Task/View/4671``).
+TASK_VIEW_ID_RE = re.compile(r"/?Task/View/(\d+)", re.IGNORECASE)
+
+
+@dataclass(frozen=True, slots=True)
+class TicketCard:
+    """Fields from a ticket page needed for the weekly report."""
+
+    status: str | None
+    support_type: str | None
+    creator_organization: str | None
+    last_updated_at: datetime | None
 
 
 def parse_dot_datetime(value: str | None) -> datetime | None:
@@ -109,6 +126,69 @@ def parse_json_or_die(response: requests.Response, context: str) -> dict[str, An
     if not isinstance(payload, dict):
         raise ValueError(f"Ответ на {context} должен быть JSON-объектом.")
     return payload
+
+
+def parse_task_list_ids(html: str) -> list[int]:
+    """Extract distinct ticket IDs from a ``/task/list`` HTML response."""
+    soup = BeautifulSoup(html, "html.parser")
+    result: list[int] = []
+    for link in soup.find_all("a", href=True):
+        match = TASK_VIEW_ID_RE.search(str(link["href"]))
+        if match:
+            ticket_id = int(match.group(1))
+            if ticket_id not in result:
+                result.append(ticket_id)
+    return result
+
+
+def _parse_created_at(soup: BeautifulSoup) -> datetime | None:
+    creator = soup.find(id="creator")
+    if creator is None:
+        return None
+    match = CREATED_AT_RE.search(creator.get_text(" ", strip=True))
+    if not match:
+        return None
+    day, month_name, year, hour, minute = match.groups()
+    month = MONTHS_RU.get(month_name.lower())
+    if month is None:
+        return None
+    try:
+        return datetime(int(year), month, int(day), int(hour), int(minute))
+    except ValueError:
+        return None
+
+
+def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
+    """Parse current ticket metadata and the latest lifecycle timestamp."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    status = None
+    status_select = soup.find("select", id="statusid")
+    if status_select is not None:
+        selected = status_select.find("option", selected=True)
+        if selected is not None:
+            status = selected.get_text(" ", strip=True) or None
+
+    type_node = soup.find(id="tasktypespan")
+    support_type = type_node.get_text(" ", strip=True) if type_node is not None else None
+
+    creator_organization = None
+    creator = soup.find(id="creator")
+    if creator is not None:
+        organization_link = creator.find("a", title=True)
+        if organization_link is not None:
+            creator_organization = str(organization_link["title"]).strip() or None
+
+    reference_time = now or datetime.now()
+    history = parse_ticket_history(
+        html,
+        _parse_created_at(soup),
+        reference_time,
+        now=reference_time,
+    )
+    dates = [parse_api_datetime(comment.get("date")) for comment in history]
+    last_updated_at = max((value for value in dates if value is not None), default=None)
+    return TicketCard(status, support_type, creator_organization, last_updated_at)
 
 
 def parse_ticket_history(

@@ -7,7 +7,7 @@
 ```text
 ISPaNo/
 ├── src/ispano/
-│   ├── cli.py                 # команды export и bot
+│   ├── cli.py                 # команды export, tickets и bot
 │   ├── settings.py            # конфигурация и валидация
 │   ├── models.py              # доменные модели
 │   ├── export.py              # orchestration выгрузки
@@ -47,6 +47,7 @@ poetry run ispano --help
 poetry run ispano export
 poetry run ispano export --since "03.09.2026 14:30"
 poetry run ispano export --format legacy
+poetry run ispano tickets 4672
 poetry run ispano bot
 ```
 
@@ -97,6 +98,31 @@ docker compose down
 
 `--format legacy` сохраняет прежнюю структуру массива `[{"ticket": ..., "chat": ...}]`.
 Legacy-файл не заменяет `exports/latest.json`, потому что viewer ожидает канонический v2.
+
+## Недельный отчёт по тикетам
+
+Команда ниже создаёт `exports/tickets_report_YYYYMMDD_HHMMSS.xlsx` с одним листом
+`Тикеты`, который можно копировать в недельный отчёт:
+
+```bash
+poetry run ispano tickets 4672
+```
+
+В выгрузку входят тикеты от самого свежего до `4672` включительно. Команда получает
+статус SD, тип ТП, партнёра и последнее обновление из карточки тикета; остальные
+предусмотренные отчётом поля остаются пустыми для ручного заполнения. JSON-экспорт и
+`exports/latest.json` команда не изменяет.
+
+Соответствия полной организации заявителя и значения в колонке «Партнер» находятся в
+`src/ispano/partner_aliases.json`. Добавь в него пары в формате:
+
+```json
+{
+  "ООО Пример": "Пример"
+}
+```
+
+Неизвестные организации остаются пустыми в XLSX и печатаются после выгрузки.
 
 ## Viewer
 

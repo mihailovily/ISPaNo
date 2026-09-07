@@ -9,7 +9,7 @@ from typing import Any, Callable
 import requests
 
 from ..settings import IntraserviceSettings
-from .parsing import parse_api_datetime, parse_json_or_die, parse_ticket_history
+from .parsing import parse_api_datetime, parse_json_or_die, parse_task_list_ids, parse_ticket_history
 
 
 class AuthenticationError(RuntimeError):
@@ -88,6 +88,50 @@ class IntraserviceClient:
         except (requests.RequestException, ValueError) as exc:
             raise IntraserviceResponseError(f"Ошибка загрузки страницы {page}: {exc}") from exc
 
+    def list_ticket_ids_descending(self, until_id: int) -> list[int]:
+        """Return ticket IDs from newest down to ``until_id`` inclusive."""
+        try:
+            response = self.session.post(
+                f"{self.settings.base_url}/task/list",
+                data={
+                    "tb_orderby": "Id desc",
+                    "nolayout": "true",
+                    "totalcount": "false",
+                    "count": "0",
+                },
+                headers={
+                    "Referer": f"{self.settings.base_url}/Task",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                timeout=self.settings.request_timeout,
+            )
+            response.raise_for_status()
+        except requests.Timeout as exc:
+            raise IntraserviceTimeoutError("Тайм-аут загрузки списка тикетов.") from exc
+        except requests.RequestException as exc:
+            raise IntraserviceResponseError(f"Ошибка загрузки списка тикетов: {exc}") from exc
+
+        ticket_ids = parse_task_list_ids(response.text)
+        if until_id not in ticket_ids:
+            raise IntraserviceResponseError(
+                f"Тикет {until_id} не найден в отсортированном списке. XLSX не создан."
+            )
+        return ticket_ids[: ticket_ids.index(until_id) + 1]
+
+    def get_ticket_page(self, ticket_id: int) -> str:
+        """Load the ticket page used by both chat and weekly report exports."""
+        try:
+            response = self.session.get(
+                f"{self.settings.base_url}/Task/View/{ticket_id}",
+                timeout=self.settings.request_timeout,
+            )
+            response.raise_for_status()
+        except requests.Timeout as exc:
+            raise IntraserviceTimeoutError(f"Тайм-аут загрузки тикета {ticket_id}.") from exc
+        except requests.RequestException as exc:
+            raise IntraserviceResponseError(f"Ошибка загрузки тикета {ticket_id}: {exc}") from exc
+        return response.text
+
     def iter_changed_tasks(
         self, cutoff: datetime, report: Callable[[str], None] = print
     ) -> list[dict[str, Any]]:
@@ -131,14 +175,4 @@ class IntraserviceClient:
         created_at: datetime | None,
         upper_bound: datetime | None,
     ) -> list[dict[str, Any]]:
-        try:
-            response = self.session.get(
-                f"{self.settings.base_url}/Task/View/{ticket_id}",
-                timeout=self.settings.request_timeout,
-            )
-            response.raise_for_status()
-        except requests.Timeout as exc:
-            raise IntraserviceTimeoutError(f"Тайм-аут загрузки тикета {ticket_id}.") from exc
-        except requests.RequestException as exc:
-            raise IntraserviceResponseError(f"Ошибка загрузки тикета {ticket_id}: {exc}") from exc
-        return parse_ticket_history(response.text, created_at, upper_bound)
+        return parse_ticket_history(self.get_ticket_page(int(ticket_id)), created_at, upper_bound)

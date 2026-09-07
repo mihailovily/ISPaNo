@@ -18,6 +18,7 @@ from .intraservice.client import (
 from .intraservice.parsing import parse_dot_datetime
 from .serialization import serialize_legacy, serialize_v2, write_json_export
 from .settings import AppSettings, ConfigurationError
+from .ticket_report import TicketReportExporter, write_ticket_report
 
 
 def _parse_since(raw: str) -> datetime:
@@ -39,6 +40,8 @@ def _build_parser() -> argparse.ArgumentParser:
     export.add_argument("--since", type=_parse_since, help="дата отсечения")
     export.add_argument("--format", choices=("v2", "legacy"), default="v2")
     export.add_argument("--output-dir", help="каталог для JSON-файлов")
+    tickets = subparsers.add_parser("tickets", help="выгрузить таблицу для недельного отчёта")
+    tickets.add_argument("ticket_id", type=int, help="последний номер тикета в выгрузке")
     subparsers.add_parser("bot", help="запустить Telegram-бота")
     return parser
 
@@ -73,12 +76,31 @@ def run_bot() -> int:
     return 0
 
 
+def run_tickets(args: argparse.Namespace) -> int:
+    if args.ticket_id <= 0:
+        raise ConfigurationError("Номер тикета должен быть положительным целым числом.")
+    settings = AppSettings.from_env()
+    login, password = settings.intraservice.require_credentials()
+    rows, unknown_organizations = TicketReportExporter(
+        settings.intraservice, login, password
+    ).export(args.ticket_id)
+    path = write_ticket_report(rows, settings.export.output_dir)
+    print(f"Готово. Сохранено {len(rows)} тикетов в {path}")
+    if unknown_organizations:
+        print("Неизвестные организации (добавьте алиасы в partner_aliases.json):")
+        for organization in sorted(unknown_organizations):
+            print(f"- {organization}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
         if args.command == "export":
             return run_export(args)
+        if args.command == "tickets":
+            return run_tickets(args)
         if args.command == "bot":
             return run_bot()
     except ConfigurationError as exc:
