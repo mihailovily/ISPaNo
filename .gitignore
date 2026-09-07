@@ -5,3 +5,4 @@ exports/
 .venv/
 tickets_export*.json
 *.tmp
+src/ispano/partner_aliases.json
