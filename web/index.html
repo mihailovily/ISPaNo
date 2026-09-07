@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тикеты</title>
+  <style>
+    :root { color-scheme: light; font-family: "Segoe UI", sans-serif; }
+    body { margin: 0; padding: 24px; background: #f4f7f6; color: #263238; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { color: #2c3e50; text-align: center; }
+    .message { padding: 16px; background: #fff; border-radius: 8px; }
+    .ticket { margin: 0 0 15px; overflow: hidden; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0000000d; }
+    .ticket-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 15px 20px; background: #ecf0f1; border-left: 4px solid #3498db; cursor: pointer; }
+    .ticket-title { font-size: 1.1em; font-weight: 700; color: #2c3e50; }
+    .ticket-meta, .chat-meta { color: #7f8c8d; font-size: .9em; }
+    .ticket-body { display: none; padding: 20px; border-top: 1px solid #eee; }
+    .ticket.open .ticket-body { display: block; }
+    .ticket-desc { margin-bottom: 20px; padding: 15px; white-space: pre-wrap; background: #f9f9f9; border-radius: 6px; }
+    .chat-title { margin: 0 0 15px; padding-bottom: 5px; border-bottom: 2px solid #eee; color: #2c3e50; }
+    .chat-msg { margin-bottom: 15px; padding: 12px 15px; border: 1px solid #e1e8ed; border-left: 4px solid #2ecc71; border-radius: 6px; }
+    .chat-author { font-weight: 700; color: #34495e; }
+    .chat-text { white-space: pre-wrap; }
+    .chat-events { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #eee; color: #c0392b; font-size: .85em; }
+    @media (max-width: 680px) { .ticket-header { display: block; } .ticket-meta { margin-top: 8px; } }
+  </style>
+</head>
+<body>
+<main class="container">
+  <h1>Список тикетов</h1>
+  <div id="app" class="message">Загрузка...</div>
+</main>
+<script>
+  const app = document.getElementById('app');
+
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function showError(message) {
+    app.replaceChildren(element('p', message));
+  }
+
+  function renderComment(comment) {
+    const node = element('article', null, 'chat-msg');
+    const meta = element('div', null, 'chat-meta');
+    meta.append(element('span', comment.author || 'Неизвестный автор', 'chat-author'));
+    meta.append(document.createTextNode(` • ${comment.date_raw || comment.occurred_at || ''}`));
+    node.append(meta, element('div', comment.text || '', 'chat-text'));
+    if (Array.isArray(comment.events) && comment.events.length) {
+      const events = element('div', null, 'chat-events');
+      comment.events.forEach((event) => events.append(element('div', event)));
+      node.append(events);
+    }
+    return node;
+  }
+
+  function renderTicket(ticket) {
+    const card = element('article', null, 'ticket');
+    const header = element('button', null, 'ticket-header');
+    header.type = 'button';
+    const title = element('span', `#${ticket.id ?? ''} — ${ticket.name || 'Без названия'}`, 'ticket-title');
+    const meta = element('span', `${ticket.creator_name || 'Неизвестный автор'} • ${ticket.created_at || ''}`, 'ticket-meta');
+    header.append(title, meta);
+    const body = element('div', null, 'ticket-body');
+    body.append(element('div', ticket.description || 'Описание отсутствует.', 'ticket-desc'));
+    body.append(element('h2', 'История', 'chat-title'));
+    if (Array.isArray(ticket.chat) && ticket.chat.length) ticket.chat.forEach((comment) => body.append(renderComment(comment)));
+    else body.append(element('p', 'Нет сообщений в чате.'));
+    header.addEventListener('click', () => card.classList.toggle('open'));
+    card.append(header, body);
+    return card;
+  }
+
+  fetch('../exports/latest.json')
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((data) => {
+      if (!data || data.schema_version !== 2 || !Array.isArray(data.tickets)) {
+        throw new Error('Файл не является экспортом формата v2.');
+      }
+      app.replaceChildren();
+      if (!data.tickets.length) app.append(element('p', 'Тикетов нет.'));
+      data.tickets.forEach((ticket) => app.append(renderTicket(ticket)));
+    })
+    .catch((error) => showError(`Не удалось загрузить выгрузку: ${error.message}`));
+</script>
+</body>
+</html>

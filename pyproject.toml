@@ -1,6 +1,6 @@
 [project]
 name = "tickets-servicedesk-parse"
-version = "0.1.0"
+version = "0.2.0"
 description = "Авто-парсинг тикетов Intraservice и Telegram-бот для выгрузки JSON"
 authors = [
     {name = "mihailovily"}
@@ -12,6 +12,12 @@ dependencies = [
     "python-dotenv (>=1.2.3,<2.0.0)",
     "python-telegram-bot (>=22.0,<23.0.0)"
 ]
+
+[project.scripts]
+ispano = "ispano.cli:main"
+
+[tool.poetry]
+packages = [{ include = "ispano", from = "src" }]
 
 
 [build-system]

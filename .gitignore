@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 exports/
 .venv/
-tickets_export.json
+tickets_export*.json
+*.tmp

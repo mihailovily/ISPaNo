@@ -4,6 +4,7 @@ FROM python:3.12-slim
 # через `docker compose logs -f`.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_NO_INTERACTION=1 \
     POETRY_VERSION=2.4.1
@@ -20,7 +21,7 @@ COPY . .
 
 # Директория для экспортов (используется CLI-режимом; бот шлёт файл
 # прямо в Telegram, на диск ничего не пишет). Совпадает с OUTPUT_DIR
-# по умолчанию в config.py и с volume в docker-compose.yml.
+# по умолчанию в src/ispano/settings.py и с volume в docker-compose.yml.
 RUN mkdir -p /app/exports
 
-CMD ["poetry", "run", "python", "bot.py"]
+CMD ["poetry", "run", "python", "-m", "ispano", "bot"]
