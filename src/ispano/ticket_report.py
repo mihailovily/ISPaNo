@@ -38,6 +38,21 @@ BRACKET_VALUE_RE = re.compile(r"\[([^\]]+)\]")
 UPDATE_REQUEST_RE = re.compile(
     r"^Запрос обновления\s+\d+(?:[.-]\d+)*$", re.IGNORECASE
 )
+LATIN_LOOKALIKE_TO_CYRILLIC = str.maketrans(
+    {
+        "a": "а",
+        "b": "в",
+        "c": "с",
+        "e": "е",
+        "k": "к",
+        "m": "м",
+        "o": "о",
+        "p": "р",
+        "t": "т",
+        "x": "х",
+        "y": "у",
+    }
+)
 
 
 def _normalize_organization(value: str) -> str:
@@ -49,7 +64,7 @@ def _normalize_support_type(value: str) -> str:
 
 
 def _normalize_customer(value: str) -> str:
-    return " ".join(value.split()).casefold()
+    return " ".join(value.split()).casefold().translate(LATIN_LOOKALIKE_TO_CYRILLIC)
 
 
 def _private_config_path(env_name: str, filename: str) -> Path:
@@ -108,7 +123,7 @@ def _parse_title_fields(
     subject = TICKET_TITLE_PREFIX_RE.sub("", title, count=1).strip()
     customer = None
     for match in BRACKET_VALUE_RE.finditer(subject):
-        customer = customer_names.get(_normalize_customer(match.group(1)))
+        customer = _resolve_customer(match.group(1), customer_names)
         if customer:
             break
 
@@ -117,6 +132,23 @@ def _parse_title_fields(
         description_subject if UPDATE_REQUEST_RE.fullmatch(description_subject) else None
     )
     return description, customer
+
+
+def _resolve_customer(value: str, customer_names: dict[str, str]) -> str | None:
+    normalized = _normalize_customer(value)
+    if not normalized:
+        return None
+
+    exact = customer_names.get(normalized)
+    if exact:
+        return exact
+
+    prefix_matches = {
+        canonical
+        for alias, canonical in customer_names.items()
+        if alias.startswith(normalized)
+    }
+    return next(iter(prefix_matches)) if len(prefix_matches) == 1 else None
 
 
 @dataclass(frozen=True, slots=True)

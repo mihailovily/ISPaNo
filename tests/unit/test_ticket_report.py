@@ -83,7 +83,7 @@ class TicketReportTests(unittest.TestCase):
     def test_title_fields_extract_description_and_customer_case_insensitively(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "customer_names.json"
-            path.write_text('["ТестКлиент", "Другой Банк"]', encoding="utf-8")
+            path.write_text('["Отличный Банк", "Другой Банк"]', encoding="utf-8")
             with patch.dict(os.environ, {"CUSTOMER_NAMES_PATH": str(path)}, clear=False):
                 customer_names = load_customer_names()
         row = TicketReportRow.from_card(
@@ -93,13 +93,13 @@ class TicketReportTests(unittest.TestCase):
                 "Стандартная",
                 None,
                 None,
-                "4581. Запрос обновления 6036 [тЕсТкЛиЕнТ]",
+                "4581. Запрос обновления 6036 [OТЛИЧНЫЙ БАНК]",
             ),
             {},
             customer_names=customer_names,
         )
         self.assertEqual(row.description, "Запрос обновления 6036")
-        self.assertEqual(row.customer, "ТестКлиент")
+        self.assertEqual(row.customer, "Отличный Банк")
 
         uppercase_customer = TicketReportRow.from_card(
             4582,
@@ -108,6 +108,14 @@ class TicketReportTests(unittest.TestCase):
             customer_names=customer_names,
         )
         self.assertEqual(uppercase_customer.customer, "Другой Банк")
+
+        abbreviated_customer = TicketReportRow.from_card(
+            4583,
+            TicketCard("В работе", "Стандартная", None, None, "4583. Ошибка [ДРУГОЙ]"),
+            {},
+            customer_names=customer_names,
+        )
+        self.assertEqual(abbreviated_customer.customer, "Другой Банк")
 
     def test_writes_copy_ready_workbook(self) -> None:
         row = TicketReportRow(
