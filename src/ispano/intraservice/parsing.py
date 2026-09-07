@@ -43,6 +43,7 @@ class TicketCard:
     support_type: str | None
     creator_organization: str | None
     last_updated_at: datetime | None
+    title: str | None = None
 
 
 def parse_dot_datetime(value: str | None) -> datetime | None:
@@ -183,6 +184,9 @@ def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
     """Parse current ticket metadata and the latest lifecycle timestamp."""
     soup = BeautifulSoup(html, "html.parser")
 
+    title_node = soup.find(id="taskname")
+    title = title_node.get_text(" ", strip=True) if title_node is not None else None
+
     status = None
     status_select = soup.find("select", id="statusid")
     if status_select is not None:
@@ -208,7 +212,7 @@ def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
     )
     dates = [parse_api_datetime(comment.get("date")) for comment in history]
     last_updated_at = max((value for value in dates if value is not None), default=None)
-    return TicketCard(status, support_type, creator_organization, last_updated_at)
+    return TicketCard(status, support_type, creator_organization, last_updated_at, title)
 
 
 def parse_ticket_history(

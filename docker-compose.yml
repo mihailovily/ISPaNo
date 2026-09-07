@@ -14,6 +14,7 @@ services:
       OUTPUT_DIR: /app/exports
     volumes:
       - ./exports:/app/exports:rw
+      - ./.local:/app/.local:ro
     logging:
       driver: json-file
       options:

@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,10 +10,18 @@ from openpyxl import load_workbook
 from ispano.intraservice.client import IntraserviceClient, IntraserviceResponseError
 from ispano.intraservice.parsing import TicketCard, parse_task_list_ids, parse_ticket_card
 from ispano.settings import IntraserviceSettings
-from ispano.ticket_report import REPORT_HEADERS, TicketReportRow, load_partner_aliases, write_ticket_report
+from ispano.ticket_report import (
+    REPORT_HEADERS,
+    TicketReportRow,
+    load_partner_aliases,
+    load_customer_names,
+    load_support_type_aliases,
+    write_ticket_report,
+)
 
 
 CARD_HTML = """
+<span id="taskname">4581. Запрос обновления 6036 [ТестКлиент]</span>
 <a href="/Task/index?tb_serviceid=27" title="Заявки на ТП 3-й линии в СПБ">Заявки на ТП 3-й линии в СПБ</a>
 <span id="tasktypespan">Стандартный HSM</span>
 <select id="statusid"><option>В работе</option><option selected>Требует уточнения</option></select>
@@ -28,6 +37,7 @@ class TicketCardParsingTests(unittest.TestCase):
         self.assertEqual(card.support_type, "Заявки на ТП 3-й линии в СПБ")
         self.assertEqual(card.creator_organization, "ООО «Тест»")
         self.assertEqual(card.last_updated_at, datetime(2026, 9, 7, 11, 2))
+        self.assertEqual(card.title, "4581. Запрос обновления 6036 [ТестКлиент]")
 
     def test_extracts_distinct_ticket_ids_in_response_order(self) -> None:
         html = '<a href="Task/view/20">20</a><a href="/Task/View/19">19</a><a href="Task/view/20">20</a>'
@@ -36,9 +46,11 @@ class TicketCardParsingTests(unittest.TestCase):
 
 class TicketReportTests(unittest.TestCase):
     def test_alias_normalization_and_unknown_organization(self) -> None:
-        with patch("ispano.ticket_report.files") as mocked_files:
-            mocked_files.return_value.joinpath.return_value.read_text.return_value = '{"ООО \\\"Тест\\\"": "Тест"}'
-            aliases = load_partner_aliases()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "partner_aliases.json"
+            path.write_text('{"ООО \\\"Тест\\\"": "Тест"}', encoding="utf-8")
+            with patch.dict(os.environ, {"PARTNER_ALIASES_PATH": str(path)}, clear=False):
+                aliases = load_partner_aliases()
         card = parse_ticket_card(CARD_HTML, now=datetime(2026, 9, 7, 12))
         row = TicketReportRow.from_card(20, card, aliases)
         self.assertEqual(row.partner, "Тест")
@@ -49,13 +61,64 @@ class TicketReportTests(unittest.TestCase):
         )
         self.assertEqual(unknown.partner, "ООО Неизвестная")
 
-    def test_project_partner_aliases_are_loaded(self) -> None:
-        aliases = load_partner_aliases()
-        self.assertEqual(aliases["ооо \"специальная интеграция\""], "СпецИнт")
-        self.assertEqual(aliases["ооо система защиты данных"], "СЗД")
+    def test_partner_aliases_are_loaded_from_private_file(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "partner_aliases.json"
+            path.write_text('{"ООО Пример": "Пример"}', encoding="utf-8")
+            with patch.dict(os.environ, {"PARTNER_ALIASES_PATH": str(path)}, clear=False):
+                aliases = load_partner_aliases()
+
+        self.assertEqual(aliases["ооо пример"], "Пример")
+
+    def test_support_type_alias_is_applied(self) -> None:
+        aliases = load_support_type_aliases()
+        row = TicketReportRow.from_card(
+            20,
+            TicketCard("В работе", "ТП HSM Стандартная", None, None),
+            {},
+            aliases,
+        )
+        self.assertEqual(row.support_type, "Стандартная")
+
+    def test_title_fields_extract_description_and_customer_case_insensitively(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "customer_names.json"
+            path.write_text('["ТестКлиент", "Другой Банк"]', encoding="utf-8")
+            with patch.dict(os.environ, {"CUSTOMER_NAMES_PATH": str(path)}, clear=False):
+                customer_names = load_customer_names()
+        row = TicketReportRow.from_card(
+            4581,
+            TicketCard(
+                "В работе",
+                "Стандартная",
+                None,
+                None,
+                "4581. Запрос обновления 6036 [тЕсТкЛиЕнТ]",
+            ),
+            {},
+            customer_names=customer_names,
+        )
+        self.assertEqual(row.description, "Запрос обновления 6036")
+        self.assertEqual(row.customer, "ТестКлиент")
+
+        uppercase_customer = TicketReportRow.from_card(
+            4582,
+            TicketCard("В работе", "Стандартная", None, None, "4582. Ошибка [ДРУГОЙ БАНК]"),
+            {},
+            customer_names=customer_names,
+        )
+        self.assertEqual(uppercase_customer.customer, "Другой Банк")
 
     def test_writes_copy_ready_workbook(self) -> None:
-        row = TicketReportRow(20, "В работе", "Стандартная", "Партнер", datetime(2026, 9, 7, 11, 2))
+        row = TicketReportRow(
+            20,
+            "В работе",
+            "Стандартная",
+            "Партнер",
+            datetime(2026, 9, 7, 11, 2),
+            "Запрос обновления 6036",
+            "ТестКлиент",
+        )
         with TemporaryDirectory() as directory:
             path = write_ticket_report([row], Path(directory))
             workbook = load_workbook(path)
@@ -63,6 +126,8 @@ class TicketReportTests(unittest.TestCase):
             self.assertEqual(tuple(cell.value for cell in sheet[1]), REPORT_HEADERS)
             self.assertEqual(sheet["A2"].value, 20)
             self.assertIsNone(sheet["B2"].value)
+            self.assertEqual(sheet["E2"].value, "Запрос обновления 6036")
+            self.assertEqual(sheet["G2"].value, "ТестКлиент")
             self.assertEqual(sheet["I2"].value, datetime(2026, 9, 7, 11, 2))
 
 

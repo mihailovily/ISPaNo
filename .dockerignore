@@ -5,3 +5,4 @@ __pycache__/
 exports/
 tickets_export*.json
 .venv/
+.local/

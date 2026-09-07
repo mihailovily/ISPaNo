@@ -3,6 +3,6 @@ __pycache__/
 *.pyc
 exports/
 .venv/
+.local/
 tickets_export*.json
 *.tmp
-src/ispano/partner_aliases.json
