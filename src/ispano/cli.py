@@ -16,7 +16,7 @@ from .intraservice.client import (
 )
 from .intraservice.parsing import parse_dot_datetime
 from .serialization import serialize_legacy, serialize_v2, write_json_export
-from .settings import AppSettings, ConfigurationError, resolve_output_dir
+from .settings import AppSettings, ConfigurationError, PROJECT_ROOT, resolve_output_dir
 from .ticket_report import TicketReportExporter, write_ticket_report
 
 
@@ -43,6 +43,18 @@ def _build_parser() -> argparse.ArgumentParser:
     tickets.add_argument("ticket_id", type=int, help="последний номер тикета в выгрузке")
     subparsers.add_parser("bot", help="запустить Telegram-бота")
     return parser
+
+
+def _require_env_file() -> bool:
+    """Give a first-run hint before commands need environment configuration."""
+    if (PROJECT_ROOT / ".env").is_file():
+        return True
+    print(
+        "Ошибка конфигурации: не найден .env. "
+        "Запустите `python setup.py` для первичной настройки.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def run_export(args: argparse.Namespace) -> int:
@@ -99,6 +111,8 @@ def run_tickets(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if not _require_env_file():
+        return 2
     try:
         if args.command == "export":
             return run_export(args)
