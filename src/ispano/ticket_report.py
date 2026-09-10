@@ -6,7 +6,7 @@ import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
@@ -16,8 +16,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .intraservice.client import IntraserviceClient
-from .intraservice.parsing import TicketCard, parse_ticket_card
+from .intraservice.parsing import TicketCard, parse_ticket_card_with_history
 from .settings import PROJECT_ROOT, IntraserviceSettings
+from .ticket_summary import TicketHistorySummarizer, TicketSummaryError
 
 REPORT_HEADERS = (
     "Заявка",
@@ -175,6 +176,7 @@ class TicketReportRow:
     last_updated_at: datetime | None
     description: str | None = None
     customer: str | None = None
+    current_status: str | None = None
 
     @classmethod
     def from_card(
@@ -220,7 +222,7 @@ class TicketReportRow:
             self.description or "",
             self.partner or "",
             self.customer or "",
-            "",
+            self.current_status or "",
             self.last_updated_at,
             "",
         )
@@ -229,10 +231,17 @@ class TicketReportRow:
 class TicketReportExporter:
     """Fetch report rows from IntraService ticket cards."""
 
-    def __init__(self, settings: IntraserviceSettings, login: str, password: str) -> None:
+    def __init__(
+        self,
+        settings: IntraserviceSettings,
+        login: str,
+        password: str,
+        summarizer: TicketHistorySummarizer | None = None,
+    ) -> None:
         self.settings = settings
         self.login = login
         self.password = password
+        self.summarizer = summarizer
 
     def export(self, until_id: int, report: ProgressReporter = print) -> tuple[list[TicketReportRow], set[str]]:
         aliases = load_partner_aliases()
@@ -246,7 +255,9 @@ class TicketReportExporter:
             rows: list[TicketReportRow] = []
             for index, ticket_id in enumerate(ticket_ids, 1):
                 report(f"[{index}/{len(ticket_ids)}] Тикет {ticket_id}...")
-                card = parse_ticket_card(client.get_ticket_page(ticket_id))
+                card, history = parse_ticket_card_with_history(
+                    client.get_ticket_page(ticket_id)
+                )
                 row = TicketReportRow.from_card(
                     ticket_id,
                     card,
@@ -255,6 +266,14 @@ class TicketReportExporter:
                     customer_names,
                     status_aliases,
                 )
+                if self.summarizer is not None:
+                    try:
+                        row = replace(
+                            row,
+                            current_status=self.summarizer.summarize(history),
+                        )
+                    except TicketSummaryError as exc:
+                        report(f"Предупреждение: тикет {ticket_id} не суммаризирован ИИ: {exc}")
                 rows.append(row)
                 if (
                     card.creator_organization

@@ -163,11 +163,37 @@ class ExportSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class TicketSummarySettings:
+    """Optional OpenAI-compatible settings for XLSX ticket summaries."""
+
+    api_base_url: str | None
+    model: str | None
+    api_key: str | None
+
+    @property
+    def enabled(self) -> bool:
+        """Whether enough configuration is present to offer AI summarization."""
+        return self.api_base_url is not None and self.model is not None
+
+    @classmethod
+    def from_env(cls) -> "TicketSummarySettings":
+        api_base_url = (_env("TICKET_SUMMARY_API_BASE_URL", "") or "").strip().rstrip("/")
+        model = (_env("TICKET_SUMMARY_MODEL", "") or "").strip()
+        api_key = (_env("TICKET_SUMMARY_API_KEY", "") or "").strip()
+        return cls(
+            api_base_url=api_base_url or None,
+            model=model or None,
+            api_key=api_key or None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     """All settings. Telegram configuration is loaded only when requested."""
 
     intraservice: IntraserviceSettings
     export: ExportSettings
+    ticket_summary: TicketSummarySettings
     telegram: TelegramSettings | None = None
 
     @classmethod
@@ -175,6 +201,7 @@ class AppSettings:
         return cls(
             intraservice=IntraserviceSettings.from_env(),
             export=ExportSettings.from_env(),
+            ticket_summary=TicketSummarySettings.from_env(),
             telegram=TelegramSettings.from_env() if include_telegram else None,
         )
 

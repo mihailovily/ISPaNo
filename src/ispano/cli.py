@@ -18,6 +18,7 @@ from .intraservice.parsing import parse_dot_datetime
 from .serialization import serialize_legacy, serialize_v2, write_json_export
 from .settings import AppSettings, ConfigurationError, PROJECT_ROOT, resolve_output_dir
 from .ticket_report import TicketReportExporter, write_ticket_report
+from .ticket_summary import TicketHistorySummarizer
 
 
 def _parse_since(raw: str) -> datetime:
@@ -96,8 +97,13 @@ def run_tickets(args: argparse.Namespace) -> int:
         raise ConfigurationError("Номер тикета должен быть положительным целым числом.")
     settings = AppSettings.from_env()
     login, password = settings.intraservice.require_credentials()
+    summarizer = None
+    if settings.ticket_summary.enabled:
+        answer = input("Использовать ИИ для заполнения статусов? [y/N] ").strip().casefold()
+        if answer == "y":
+            summarizer = TicketHistorySummarizer(settings.ticket_summary)
     rows, unknown_organizations = TicketReportExporter(
-        settings.intraservice, login, password
+        settings.intraservice, login, password, summarizer
     ).export(args.ticket_id)
     path = write_ticket_report(rows, settings.export.output_dir)
     print(f"Готово. Сохранено {len(rows)} тикетов в {path}")

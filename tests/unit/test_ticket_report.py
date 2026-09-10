@@ -12,6 +12,7 @@ from ispano.intraservice.parsing import TicketCard, parse_task_list_ids, parse_t
 from ispano.settings import IntraserviceSettings
 from ispano.ticket_report import (
     REPORT_HEADERS,
+    TicketReportExporter,
     TicketReportRow,
     load_partner_aliases,
     load_customer_names,
@@ -19,6 +20,7 @@ from ispano.ticket_report import (
     load_status_aliases,
     write_ticket_report,
 )
+from ispano.ticket_summary import TicketSummaryError
 
 
 CARD_HTML = """
@@ -148,6 +150,53 @@ class TicketReportTests(unittest.TestCase):
             self.assertEqual(sheet["E2"].value, "Запрос обновления 6036")
             self.assertEqual(sheet["G2"].value, "ТестКлиент")
             self.assertEqual(sheet["I2"].value, datetime(2026, 9, 7, 11, 2))
+
+    def test_writes_current_ai_status_to_eighth_column(self) -> None:
+        row = TicketReportRow(20, None, None, None, None, current_status="Ведётся поиск решения.")
+        self.assertEqual(row.values()[7], "Ведётся поиск решения.")
+
+
+class TicketReportAiTests(unittest.TestCase):
+    @patch("ispano.ticket_report.load_customer_names", return_value={})
+    @patch("ispano.ticket_report.load_status_aliases", return_value={})
+    @patch("ispano.ticket_report.load_support_type_aliases", return_value={})
+    @patch("ispano.ticket_report.load_partner_aliases", return_value={})
+    @patch("ispano.ticket_report.IntraserviceClient")
+    def test_passes_parsed_history_to_ai_and_records_its_status(
+        self, client_cls: Mock, *_: Mock
+    ) -> None:
+        client = client_cls.return_value.__enter__.return_value
+        client.list_ticket_ids_descending.return_value = [20]
+        client.get_ticket_page.return_value = CARD_HTML
+        summarizer = Mock()
+        summarizer.summarize.return_value = "Устройство отправлено в сервис."
+        settings = IntraserviceSettings("https://sd.example.test", "login", "password", 0, (1, 1), 1)
+
+        rows, _ = TicketReportExporter(settings, "login", "password", summarizer).export(20)
+
+        self.assertEqual(rows[0].current_status, "Устройство отправлено в сервис.")
+        self.assertEqual(summarizer.summarize.call_count, 1)
+
+    @patch("ispano.ticket_report.load_customer_names", return_value={})
+    @patch("ispano.ticket_report.load_status_aliases", return_value={})
+    @patch("ispano.ticket_report.load_support_type_aliases", return_value={})
+    @patch("ispano.ticket_report.load_partner_aliases", return_value={})
+    @patch("ispano.ticket_report.IntraserviceClient")
+    def test_continues_with_empty_status_when_ai_fails(
+        self, client_cls: Mock, *_: Mock
+    ) -> None:
+        client = client_cls.return_value.__enter__.return_value
+        client.list_ticket_ids_descending.return_value = [20]
+        client.get_ticket_page.return_value = CARD_HTML
+        summarizer = Mock()
+        summarizer.summarize.side_effect = TicketSummaryError("offline")
+        messages: list[str] = []
+        settings = IntraserviceSettings("https://sd.example.test", "login", "password", 0, (1, 1), 1)
+
+        rows, _ = TicketReportExporter(settings, "login", "password", summarizer).export(20, messages.append)
+
+        self.assertEqual(rows[0].current_status, None)
+        self.assertTrue(any("тикет 20" in message for message in messages))
 
 
 class TicketListClientTests(unittest.TestCase):

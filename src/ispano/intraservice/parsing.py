@@ -148,6 +148,18 @@ def _parse_created_at(soup: BeautifulSoup) -> datetime | None:
     if creator is None:
         return None
 
+    match = CREATED_AT_RE.search(creator.get_text(" ", strip=True))
+    if not match:
+        return None
+    day, month_name, year, hour, minute = match.groups()
+    month = MONTHS_RU.get(month_name.lower())
+    if month is None:
+        return None
+    try:
+        return datetime(int(year), month, int(day), int(hour), int(minute))
+    except ValueError:
+        return None
+
 
 def _parse_support_type(soup: BeautifulSoup) -> str | None:
     """Extract the support service name from the ticket's service link.
@@ -167,21 +179,12 @@ def _parse_support_type(soup: BeautifulSoup) -> str | None:
         if value:
             return value
     return None
-    match = CREATED_AT_RE.search(creator.get_text(" ", strip=True))
-    if not match:
-        return None
-    day, month_name, year, hour, minute = match.groups()
-    month = MONTHS_RU.get(month_name.lower())
-    if month is None:
-        return None
-    try:
-        return datetime(int(year), month, int(day), int(hour), int(minute))
-    except ValueError:
-        return None
 
 
-def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
-    """Parse current ticket metadata and the latest lifecycle timestamp."""
+def parse_ticket_card_with_history(
+    html: str, *, now: datetime | None = None
+) -> tuple[TicketCard, list[dict[str, Any]]]:
+    """Parse report metadata and the complete conversation from one ticket page."""
     soup = BeautifulSoup(html, "html.parser")
 
     title_node = soup.find(id="taskname")
@@ -212,7 +215,12 @@ def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
     )
     dates = [parse_api_datetime(comment.get("date")) for comment in history]
     last_updated_at = max((value for value in dates if value is not None), default=None)
-    return TicketCard(status, support_type, creator_organization, last_updated_at, title)
+    return TicketCard(status, support_type, creator_organization, last_updated_at, title), history
+
+
+def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:
+    """Parse current ticket metadata and the latest lifecycle timestamp."""
+    return parse_ticket_card_with_history(html, now=now)[0]
 
 
 def parse_ticket_history(
