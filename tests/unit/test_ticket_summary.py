@@ -33,6 +33,11 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         self.assertEqual(kwargs["json"]["model"], "local-model")
         self.assertFalse(kwargs["json"]["stream"])
         self.assertIn("Устройство отправлено", kwargs["json"]["messages"][1]["content"])
+        prompt = kwargs["json"]["messages"][0]["content"]
+        self.assertIn("от лица ГК СПБ", prompt)
+        self.assertIn("последовательность обновлений", prompt)
+        self.assertIn("последнее подтверждённое событие", prompt)
+        self.assertIn("ожидается получение изделия заказчиком", prompt)
 
     @patch("ispano.ticket_summary.requests.post")
     def test_omits_authorization_without_api_key(self, post: Mock) -> None:
@@ -48,12 +53,12 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         self.assertNotIn("Authorization", post.call_args.kwargs["headers"])
 
     @patch("ispano.ticket_summary.requests.post")
-    def test_limits_result_to_1000_characters(self, post: Mock) -> None:
+    def test_limits_result_to_600_characters(self, post: Mock) -> None:
         response = Mock()
-        response.json.return_value = {"choices": [{"message": {"content": "а" * 1200}}]}
+        response.json.return_value = {"choices": [{"message": {"content": "а" * 800}}]}
         post.return_value = response
 
-        self.assertEqual(len(TicketHistorySummarizer(self.settings).summarize([])), 1000)
+        self.assertEqual(len(TicketHistorySummarizer(self.settings).summarize([])), 600)
 
     @patch("ispano.ticket_summary.time.sleep")
     @patch("ispano.ticket_summary.requests.post")
