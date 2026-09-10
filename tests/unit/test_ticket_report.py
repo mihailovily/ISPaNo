@@ -16,6 +16,7 @@ from ispano.ticket_report import (
     load_partner_aliases,
     load_customer_names,
     load_support_type_aliases,
+    load_status_aliases,
     write_ticket_report,
 )
 
@@ -79,6 +80,16 @@ class TicketReportTests(unittest.TestCase):
             aliases,
         )
         self.assertEqual(row.support_type, "Стандартная")
+
+    def test_status_alias_is_applied(self) -> None:
+        aliases = load_status_aliases()
+        row = TicketReportRow.from_card(
+            20,
+            TicketCard("Требуется уточнение", "Стандартная", None, None),
+            {},
+            status_aliases=aliases,
+        )
+        self.assertEqual(row.status, "Требует уточнения")
 
     def test_title_fields_extract_description_and_customer_case_insensitively(self) -> None:
         with TemporaryDirectory() as directory:

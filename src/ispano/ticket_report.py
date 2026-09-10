@@ -63,6 +63,10 @@ def _normalize_support_type(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
+def _normalize_status(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
 def _normalize_customer(value: str) -> str:
     return " ".join(value.split()).casefold().translate(LATIN_LOOKALIKE_TO_CYRILLIC)
 
@@ -104,6 +108,17 @@ def load_support_type_aliases() -> dict[str, str]:
             "support_type_aliases.json должен содержать JSON-объект строковых алиасов."
         )
     return {_normalize_support_type(key): value.strip() for key, value in payload.items()}
+
+
+def load_status_aliases() -> dict[str, str]:
+    """Load raw SD status names and their report-friendly aliases."""
+    source = files("ispano").joinpath("status_aliases.json")
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in payload.items()
+    ):
+        raise ValueError("status_aliases.json должен содержать JSON-объект строковых алиасов.")
+    return {_normalize_status(key): value.strip() for key, value in payload.items()}
 
 
 def load_customer_names() -> dict[str, str]:
@@ -169,6 +184,7 @@ class TicketReportRow:
         aliases: dict[str, str],
         support_type_aliases: dict[str, str] | None = None,
         customer_names: dict[str, str] | None = None,
+        status_aliases: dict[str, str] | None = None,
     ) -> "TicketReportRow":
         partner = None
         if card.creator_organization:
@@ -181,10 +197,13 @@ class TicketReportRow:
             support_type = support_type_aliases.get(
                 _normalize_support_type(support_type), support_type
             )
+        status = card.status
+        if status and status_aliases:
+            status = status_aliases.get(_normalize_status(status), status)
         description, customer = _parse_title_fields(card.title, customer_names or {})
         return cls(
             ticket_id,
-            card.status,
+            status,
             support_type,
             partner,
             card.last_updated_at,
@@ -218,6 +237,7 @@ class TicketReportExporter:
     def export(self, until_id: int, report: ProgressReporter = print) -> tuple[list[TicketReportRow], set[str]]:
         aliases = load_partner_aliases()
         support_type_aliases = load_support_type_aliases()
+        status_aliases = load_status_aliases()
         customer_names = load_customer_names()
         unknown_organizations: set[str] = set()
         with IntraserviceClient(self.settings, self.login, self.password) as client:
@@ -228,7 +248,12 @@ class TicketReportExporter:
                 report(f"[{index}/{len(ticket_ids)}] Тикет {ticket_id}...")
                 card = parse_ticket_card(client.get_ticket_page(ticket_id))
                 row = TicketReportRow.from_card(
-                    ticket_id, card, aliases, support_type_aliases, customer_names
+                    ticket_id,
+                    card,
+                    aliases,
+                    support_type_aliases,
+                    customer_names,
+                    status_aliases,
                 )
                 rows.append(row)
                 if (
