@@ -31,6 +31,7 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         self.assertEqual(url, "http://localhost:20128/v1/chat/completions")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(kwargs["json"]["model"], "local-model")
+        self.assertFalse(kwargs["json"]["stream"])
         self.assertIn("Устройство отправлено", kwargs["json"]["messages"][1]["content"])
 
     @patch("ispano.ticket_summary.requests.post")
@@ -74,3 +75,21 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         with patch("ispano.ticket_summary.time.sleep"):
             with self.assertRaises(TicketSummaryError):
                 TicketHistorySummarizer(self.settings).summarize([])
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_accepts_openai_sse_response(self, post: Mock) -> None:
+        response = Mock()
+        response.json.side_effect = ValueError("not JSON")
+        response.text = (
+            'data: {"choices":[{"delta":{"content":"Устройство отправлено. "}}]}\n\n'
+            'data: {"choices":[{"delta":{"content":"Ждём закрытия."}}]}\n\n'
+            "data: [DONE]\n"
+        )
+        response.headers = {"Content-Type": "text/event-stream"}
+        response.status_code = 200
+        post.return_value = response
+
+        self.assertEqual(
+            TicketHistorySummarizer(self.settings).summarize([]),
+            "Устройство отправлено. Ждём закрытия.",
+        )
