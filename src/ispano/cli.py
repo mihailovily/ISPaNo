@@ -99,7 +99,9 @@ def run_tickets(args: argparse.Namespace) -> int:
     login, password = settings.intraservice.require_credentials()
     summarizer = None
     if settings.ticket_summary.enabled:
-        answer = input("Использовать ИИ для заполнения статусов? [y/N] ").strip().casefold()
+        answer = input(
+            "Использовать ИИ для заполнения статусов и описаний? [y/N] "
+        ).strip().casefold()
         if answer == "y":
             summarizer = TicketHistorySummarizer(settings.ticket_summary)
     rows, unknown_organizations = TicketReportExporter(

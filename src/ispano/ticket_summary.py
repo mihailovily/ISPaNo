@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -12,14 +14,15 @@ from .settings import TicketSummarySettings
 
 
 class TicketSummaryError(RuntimeError):
-    """The configured AI service could not produce a usable ticket status."""
+    """The configured AI service could not produce a usable ticket summary."""
 
 
 class TicketHistorySummarizer:
-    """Request a compact current ticket status from an OpenAI-compatible API."""
+    """Request compact ticket texts from an OpenAI-compatible API."""
 
     max_attempts = 3
     max_status_length = 600
+    max_description_length = 400
 
     def __init__(self, settings: TicketSummarySettings) -> None:
         if not settings.enabled:
@@ -28,28 +31,41 @@ class TicketHistorySummarizer:
 
     def summarize(self, history: list[dict[str, Any]]) -> str:
         """Return a non-empty status, retrying transient transport/API failures."""
+        return self._with_retries(lambda: self._request_status(history), "статус")
+
+    def summarize_description(
+        self, title: str | None, description: str | None
+    ) -> str:
+        """Return one concise sentence describing the ticket's request."""
+        clean_title = (title or "").strip()
+        clean_description = (description or "").strip()
+        if not clean_title and not clean_description:
+            raise TicketSummaryError("У тикета нет заголовка и исходного описания.")
+
+        return self._with_retries(
+            lambda: self._request_description(clean_title, clean_description),
+            "описание",
+        )
+
+    def _with_retries(self, request: Callable[[], str], result_name: str) -> str:
         last_error: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):
             try:
-                return self._request(history)
+                return request()
             except (requests.RequestException, ValueError, TicketSummaryError) as exc:
                 last_error = exc
                 if attempt < self.max_attempts:
                     time.sleep(attempt)
         raise TicketSummaryError(
-            f"ИИ не вернул корректный статус за {self.max_attempts} попытки: {last_error}"
+            f"ИИ не вернул корректное {result_name} за {self.max_attempts} попытки: "
+            f"{last_error}"
         ) from last_error
 
-    def _request(self, history: list[dict[str, Any]]) -> str:
-        headers = {"Content-Type": "application/json"}
-        if self.settings.api_key:
-            headers["Authorization"] = f"Bearer {self.settings.api_key}"
-        payload = {
-            "model": self.settings.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
+    def _request_status(self, history: list[dict[str, Any]]) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": (
                         "Ты анализируешь историю заявки службы поддержки.  В системе видны заявки, получаемые первой, второй и третьей линией техподдержки. Для первой и второй линии мы являемся разработчиком, производителем и тд. В разговоре с клиентом они ссылаются именно на нас."
                         "Заявки, имеющие в себе тип Заявки на ТП 3-й линии в СПБ адресованы непосредственно нам.  "
                         "Составь понятное текущее состояние тикета на русском языке с учетом перечисленных особенностей: проблему или результат, текущее "
@@ -69,13 +85,50 @@ class TicketHistorySummarizer:
                         "Не пересказывай диалог, не добавляй несущественные подробности и не "
                         "выдумывай факты. Верни только готовый текст без заголовков и Markdown: "
                         "обычно 1–3 связанных предложения, не более 400 символов, если можешь более кратко, то это приветствуется.\n\n"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": "История тикета:\n" + json.dumps(history, ensure_ascii=False),
-                },
-            ],
+                ),
+            },
+            {
+                "role": "user",
+                "content": "История тикета:\n" + json.dumps(history, ensure_ascii=False),
+            },
+        ]
+        return self._request_completion(messages, self.max_status_length)
+
+    def _request_description(self, title: str, description: str) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Ты формулируешь краткое описание заявки службы поддержки на русском "
+                    "языке. По заголовку и исходному описанию определи только суть проблемы "
+                    "или запроса. Верни от двух до шести слов, кратко и емко описывающих проблему, например Консультация по ключам; или Аппаратные сбои HSM; или запрос обновления. Без "
+                    "заголовков, списков, Markdown, приветствий, пересказа истории и "
+                    "служебных данных. Не выдумывай факты."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Данные тикета:\n"
+                    + json.dumps(
+                        {"title": title, "description": description},
+                        ensure_ascii=False,
+                    )
+                ),
+            },
+        ]
+        result = self._request_completion(messages, self.max_description_length)
+        return self._first_sentence(result)
+
+    def _request_completion(
+        self, messages: list[dict[str, str]], max_length: int
+    ) -> str:
+        headers = {"Content-Type": "application/json"}
+        if self.settings.api_key:
+            headers["Authorization"] = f"Bearer {self.settings.api_key}"
+        payload = {
+            "model": self.settings.model,
+            "messages": messages,
             "temperature": 0.1,
             "stream": False,
         }
@@ -87,9 +140,21 @@ class TicketHistorySummarizer:
         )
         response.raise_for_status()
         content = self._extract_content(response)
-        if not isinstance(content, str) or not (status := content.strip()):
-            raise TicketSummaryError("ИИ вернул пустой или некорректный статус.")
-        return status[: self.max_status_length]
+        if not isinstance(content, str) or not (result := content.strip()):
+            raise TicketSummaryError("ИИ вернул пустой или некорректный результат.")
+        return result[:max_length]
+
+    @staticmethod
+    def _first_sentence(value: str) -> str:
+        normalized = " ".join(value.split()).strip()
+        normalized = re.sub(r"^(?:#+|[-*])\s*", "", normalized)
+        normalized = normalized.strip("`\"'«»“”")
+        match = re.search(r"^.*?[.!?](?=\s|$)", normalized)
+        sentence = match.group(0) if match else normalized
+        sentence = sentence[: TicketHistorySummarizer.max_description_length].strip()
+        if not sentence:
+            raise TicketSummaryError("ИИ вернул пустое описание после нормализации.")
+        return sentence
 
     def _extract_content(self, response: requests.Response) -> str:
         """Read regular JSON responses and OpenAI-compatible SSE streams."""

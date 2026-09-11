@@ -44,6 +44,7 @@ class TicketCard:
     creator_organization: str | None
     last_updated_at: datetime | None
     title: str | None = None
+    description: str | None = None
 
 
 def parse_dot_datetime(value: str | None) -> datetime | None:
@@ -190,6 +191,17 @@ def parse_ticket_card_with_history(
     title_node = soup.find(id="taskname")
     title = title_node.get_text(" ", strip=True) if title_node is not None else None
 
+    description = None
+    description_input = soup.find("input", id="description")
+    if description_input is not None:
+        value = description_input.get("value")
+        if isinstance(value, str):
+            description = value.strip() or None
+    if description is None:
+        description_node = soup.select_one("pre.task-description")
+        if description_node is not None:
+            description = description_node.get_text("\n", strip=True) or None
+
     status = None
     status_select = soup.find("select", id="statusid")
     if status_select is not None:
@@ -215,7 +227,17 @@ def parse_ticket_card_with_history(
     )
     dates = [parse_api_datetime(comment.get("date")) for comment in history]
     last_updated_at = max((value for value in dates if value is not None), default=None)
-    return TicketCard(status, support_type, creator_organization, last_updated_at, title), history
+    return (
+        TicketCard(
+            status,
+            support_type,
+            creator_organization,
+            last_updated_at,
+            title,
+            description,
+        ),
+        history,
+    )
 
 
 def parse_ticket_card(html: str, *, now: datetime | None = None) -> TicketCard:

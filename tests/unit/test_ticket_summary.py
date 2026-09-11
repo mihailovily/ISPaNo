@@ -34,10 +34,55 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         self.assertFalse(kwargs["json"]["stream"])
         self.assertIn("Устройство отправлено", kwargs["json"]["messages"][1]["content"])
         prompt = kwargs["json"]["messages"][0]["content"]
-        self.assertIn("от лица ГК СПБ", prompt)
+        self.assertIn("Заявки на ТП 3-й линии", prompt)
         self.assertIn("последовательность обновлений", prompt)
         self.assertIn("последнее подтверждённое событие", prompt)
-        self.assertIn("ожидается получение изделия заказчиком", prompt)
+        self.assertIn("отправка изделия от ГК СПБ", prompt)
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_summarizes_description_as_one_normalized_sentence(self, post: Mock) -> None:
+        response = Mock()
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "  - При обновлении возникает ошибка.\nНужны логи.  "
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        result = TicketHistorySummarizer(self.settings).summarize_description(
+            "4581. Ошибка обновления", "После загрузки файла возникает ошибка."
+        )
+
+        self.assertEqual(result, "При обновлении возникает ошибка.")
+        messages = post.call_args.kwargs["json"]["messages"]
+        self.assertIn("ровно одно самостоятельное предложение", messages[0]["content"])
+        self.assertIn("4581. Ошибка обновления", messages[1]["content"])
+        self.assertIn("После загрузки файла", messages[1]["content"])
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_description_without_source_does_not_call_endpoint(self, post: Mock) -> None:
+        with self.assertRaisesRegex(TicketSummaryError, "нет заголовка"):
+            TicketHistorySummarizer(self.settings).summarize_description(None, "  ")
+
+        post.assert_not_called()
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_limits_description_to_400_characters(self, post: Mock) -> None:
+        response = Mock()
+        response.json.return_value = {
+            "choices": [{"message": {"content": "а" * 500}}]
+        }
+        post.return_value = response
+
+        result = TicketHistorySummarizer(self.settings).summarize_description(
+            "Ошибка", "Подробности"
+        )
+
+        self.assertEqual(len(result), 400)
 
     @patch("ispano.ticket_summary.requests.post")
     def test_omits_authorization_without_api_key(self, post: Mock) -> None:

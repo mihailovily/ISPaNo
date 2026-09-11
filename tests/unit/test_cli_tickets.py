@@ -31,7 +31,9 @@ class TicketCommandAiPromptTests(unittest.TestCase):
         result = cli.run_tickets(argparse.Namespace(ticket_id=20))
 
         self.assertEqual(result, 0)
-        input_func.assert_called_once_with("Использовать ИИ для заполнения статусов? [y/N] ")
+        input_func.assert_called_once_with(
+            "Использовать ИИ для заполнения статусов и описаний? [y/N] "
+        )
         self.assertIsNotNone(exporter_cls.call_args.args[3])
 
     @patch("ispano.cli.write_ticket_report", return_value=Path("report.xlsx"))

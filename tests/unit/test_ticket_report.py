@@ -25,6 +25,8 @@ from ispano.ticket_summary import TicketSummaryError
 
 CARD_HTML = """
 <span id="taskname">4581. Запрос обновления 6036 [ТестКлиент]</span>
+<input id="description" value="Добрый день! Просим предоставить обновление 6036.">
+<pre class="task-description">Резервное описание</pre>
 <a href="/Task/index?tb_serviceid=27" title="Заявки на ТП 3-й линии в СПБ">Заявки на ТП 3-й линии в СПБ</a>
 <span id="tasktypespan">Стандартный HSM</span>
 <select id="statusid"><option>В работе</option><option selected>Требует уточнения</option></select>
@@ -41,6 +43,17 @@ class TicketCardParsingTests(unittest.TestCase):
         self.assertEqual(card.creator_organization, "ООО «Тест»")
         self.assertEqual(card.last_updated_at, datetime(2026, 9, 7, 11, 2))
         self.assertEqual(card.title, "4581. Запрос обновления 6036 [ТестКлиент]")
+        self.assertEqual(
+            card.description, "Добрый день! Просим предоставить обновление 6036."
+        )
+
+    def test_uses_visible_description_when_hidden_input_is_missing(self) -> None:
+        card = parse_ticket_card(
+            '<span id="taskname">20. Ошибка</span>'
+            '<pre class="task-description">Первая строка\nВторая строка</pre>'
+        )
+
+        self.assertEqual(card.description, "Первая строка\nВторая строка")
 
     def test_extracts_distinct_ticket_ids_in_response_order(self) -> None:
         html = '<a href="Task/view/20">20</a><a href="/Task/View/19">19</a><a href="Task/view/20">20</a>'
@@ -176,6 +189,39 @@ class TicketReportAiTests(unittest.TestCase):
 
         self.assertEqual(rows[0].current_status, "Устройство отправлено в сервис.")
         self.assertEqual(summarizer.summarize.call_count, 1)
+        summarizer.summarize_description.assert_not_called()
+
+    @patch("ispano.ticket_report.load_customer_names", return_value={})
+    @patch("ispano.ticket_report.load_status_aliases", return_value={})
+    @patch("ispano.ticket_report.load_support_type_aliases", return_value={})
+    @patch("ispano.ticket_report.load_partner_aliases", return_value={})
+    @patch("ispano.ticket_report.IntraserviceClient")
+    def test_uses_ai_description_for_non_update_ticket(
+        self, client_cls: Mock, *_: Mock
+    ) -> None:
+        client = client_cls.return_value.__enter__.return_value
+        client.list_ticket_ids_descending.return_value = [20]
+        client.get_ticket_page.return_value = CARD_HTML.replace(
+            "4581. Запрос обновления 6036 [ТестКлиент]",
+            "4581. Ошибка обновления [ТестКлиент]",
+        )
+        summarizer = Mock()
+        summarizer.summarize.return_value = "Изучаются логи."
+        summarizer.summarize_description.return_value = "При обновлении возникает ошибка."
+        settings = IntraserviceSettings(
+            "https://sd.example.test", "login", "password", 0, (1, 1), 1
+        )
+
+        rows, _ = TicketReportExporter(
+            settings, "login", "password", summarizer
+        ).export(20)
+
+        self.assertEqual(rows[0].description, "При обновлении возникает ошибка.")
+        self.assertEqual(rows[0].values()[4], "При обновлении возникает ошибка.")
+        summarizer.summarize_description.assert_called_once_with(
+            "4581. Ошибка обновления [ТестКлиент]",
+            "Добрый день! Просим предоставить обновление 6036.",
+        )
 
     @patch("ispano.ticket_report.load_customer_names", return_value={})
     @patch("ispano.ticket_report.load_status_aliases", return_value={})
@@ -187,16 +233,74 @@ class TicketReportAiTests(unittest.TestCase):
     ) -> None:
         client = client_cls.return_value.__enter__.return_value
         client.list_ticket_ids_descending.return_value = [20]
-        client.get_ticket_page.return_value = CARD_HTML
+        client.get_ticket_page.return_value = CARD_HTML.replace(
+            "4581. Запрос обновления 6036 [ТестКлиент]", "4581. Ошибка"
+        )
         summarizer = Mock()
         summarizer.summarize.side_effect = TicketSummaryError("offline")
+        summarizer.summarize_description.return_value = "При обновлении возникает ошибка."
         messages: list[str] = []
         settings = IntraserviceSettings("https://sd.example.test", "login", "password", 0, (1, 1), 1)
 
         rows, _ = TicketReportExporter(settings, "login", "password", summarizer).export(20, messages.append)
 
         self.assertEqual(rows[0].current_status, None)
-        self.assertTrue(any("тикет 20" in message for message in messages))
+        self.assertEqual(rows[0].description, "При обновлении возникает ошибка.")
+        self.assertTrue(
+            any("тикета 20" in message and "текущий статус" in message for message in messages)
+        )
+
+    @patch("ispano.ticket_report.load_customer_names", return_value={})
+    @patch("ispano.ticket_report.load_status_aliases", return_value={})
+    @patch("ispano.ticket_report.load_support_type_aliases", return_value={})
+    @patch("ispano.ticket_report.load_partner_aliases", return_value={})
+    @patch("ispano.ticket_report.IntraserviceClient")
+    def test_description_failure_does_not_prevent_status_summary(
+        self, client_cls: Mock, *_: Mock
+    ) -> None:
+        client = client_cls.return_value.__enter__.return_value
+        client.list_ticket_ids_descending.return_value = [20]
+        client.get_ticket_page.return_value = CARD_HTML.replace(
+            "4581. Запрос обновления 6036 [ТестКлиент]", "4581. Ошибка"
+        )
+        summarizer = Mock()
+        summarizer.summarize_description.side_effect = TicketSummaryError("offline")
+        summarizer.summarize.return_value = "Изучаются логи."
+        messages: list[str] = []
+        settings = IntraserviceSettings(
+            "https://sd.example.test", "login", "password", 0, (1, 1), 1
+        )
+
+        rows, _ = TicketReportExporter(
+            settings, "login", "password", summarizer
+        ).export(20, messages.append)
+
+        self.assertIsNone(rows[0].description)
+        self.assertEqual(rows[0].current_status, "Изучаются логи.")
+        self.assertTrue(any("тикета 20" in message and "описание" in message for message in messages))
+
+    @patch("ispano.ticket_report.load_customer_names", return_value={})
+    @patch("ispano.ticket_report.load_status_aliases", return_value={})
+    @patch("ispano.ticket_report.load_support_type_aliases", return_value={})
+    @patch("ispano.ticket_report.load_partner_aliases", return_value={})
+    @patch("ispano.ticket_report.IntraserviceClient")
+    def test_skips_ai_description_without_source_text(
+        self, client_cls: Mock, *_: Mock
+    ) -> None:
+        client = client_cls.return_value.__enter__.return_value
+        client.list_ticket_ids_descending.return_value = [20]
+        client.get_ticket_page.return_value = "<div></div>"
+        summarizer = Mock()
+        settings = IntraserviceSettings(
+            "https://sd.example.test", "login", "password", 0, (1, 1), 1
+        )
+
+        rows, _ = TicketReportExporter(
+            settings, "login", "password", summarizer
+        ).export(20)
+
+        self.assertIsNone(rows[0].description)
+        summarizer.summarize_description.assert_not_called()
 
 
 class TicketListClientTests(unittest.TestCase):

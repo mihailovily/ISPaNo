@@ -267,13 +267,29 @@ class TicketReportExporter:
                     status_aliases,
                 )
                 if self.summarizer is not None:
+                    if row.description is None and (card.title or card.description):
+                        try:
+                            row = replace(
+                                row,
+                                description=self.summarizer.summarize_description(
+                                    card.title, card.description
+                                ),
+                            )
+                        except TicketSummaryError as exc:
+                            report(
+                                f"Предупреждение: для тикета {ticket_id} ИИ не "
+                                f"сформировал описание: {exc}"
+                            )
                     try:
                         row = replace(
                             row,
                             current_status=self.summarizer.summarize(history),
                         )
                     except TicketSummaryError as exc:
-                        report(f"Предупреждение: тикет {ticket_id} не суммаризирован ИИ: {exc}")
+                        report(
+                            f"Предупреждение: для тикета {ticket_id} ИИ не "
+                            f"сформировал текущий статус: {exc}"
+                        )
                 rows.append(row)
                 if (
                     card.creator_organization
