@@ -1,0 +1,86 @@
+name: Publish release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish marked release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Detect release trailer
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trailer_lines="$(git log -1 --format=%B | git interpret-trailers --parse || true)"
+          release_values="$(printf '%s\n' "$trailer_lines" | sed -n 's/^Release:[[:space:]]*//p')"
+          release_count="$(printf '%s\n' "$release_values" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+          if [ "$release_count" -eq 0 ]; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$release_count" -ne 1 ]; then
+            echo "Exactly one Release trailer is required." >&2
+            exit 1
+          fi
+
+          version="$(printf '%s\n' "$release_values" | sed -n '1p')"
+          if [[ ! "$version" =~ ^v[0-9]+(\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release version must be a tag such as v1 or v1.2.3: $version" >&2
+            exit 1
+          fi
+
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release inputs are new
+        if: steps.release.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f CHANGELOG.md
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists." >&2
+            exit 1
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "GitHub Release $VERSION already exists." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        if: steps.release.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TARGET: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh release create "$VERSION" \
+            --target "$TARGET" \
+            --title "Релиз: $VERSION" \
+            --notes-file CHANGELOG.md
