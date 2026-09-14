@@ -40,7 +40,7 @@ class TicketHistorySummarizerTests(unittest.TestCase):
         self.assertIn("отправка изделия от ГК СПБ", prompt)
 
     @patch("ispano.ticket_summary.requests.post")
-    def test_summarizes_description_as_one_normalized_sentence(self, post: Mock) -> None:
+    def test_summarizes_short_description_with_normalized_response(self, post: Mock) -> None:
         response = Mock()
         response.json.return_value = {
             "choices": [
@@ -59,7 +59,7 @@ class TicketHistorySummarizerTests(unittest.TestCase):
 
         self.assertEqual(result, "При обновлении возникает ошибка.")
         messages = post.call_args.kwargs["json"]["messages"]
-        self.assertIn("ровно одно самостоятельное предложение", messages[0]["content"])
+        self.assertIn("Верни от двух до шести слов", messages[0]["content"])
         self.assertIn("4581. Ошибка обновления", messages[1]["content"])
         self.assertIn("После загрузки файла", messages[1]["content"])
 
