@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import bcrypt
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..cli import _parse_since
@@ -27,6 +27,10 @@ def _unauthorized() -> HTTPException:
 def _require_user(request: Request) -> None:
     if not request.session.get("username"):
         raise _unauthorized()
+
+
+def _login_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/login", status_code=303)
 
 
 def _require_csrf(request: Request) -> None:
@@ -94,14 +98,23 @@ def create_app(settings: AppSettings) -> FastAPI:
         }
 
     @app.get("/")
-    async def index(request: Request) -> FileResponse:
-        _require_user(request)
+    async def index(request: Request) -> Response:
+        if not request.session.get("username"):
+            return _login_redirect()
         return FileResponse(WEB_ROOT / "index.html")
 
     @app.get("/viewer")
-    async def viewer(request: Request) -> FileResponse:
-        _require_user(request)
+    async def viewer(request: Request) -> Response:
+        if not request.session.get("username"):
+            return _login_redirect()
         return FileResponse(WEB_ROOT / "viewer.html")
+
+    @app.get("/assets/{filename}")
+    async def asset(request: Request, filename: str) -> FileResponse:
+        _require_user(request)
+        if filename not in {"app.js", "viewer.js"}:
+            raise HTTPException(status_code=404, detail="Ресурс не найден.")
+        return FileResponse(WEB_ROOT / filename, media_type="text/javascript")
 
     @app.post("/api/jobs/json")
     async def start_json_job(request: Request) -> dict[str, object]:

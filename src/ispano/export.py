@@ -29,7 +29,7 @@ class TicketExporter:
         self.password = password
 
     def export(self, cutoff: datetime, report: ProgressReporter = print) -> list[ExportItem]:
-        with IntraserviceClient(self.settings, self.login, self.password) as client:
+        with IntraserviceClient(self.settings, self.login, self.password, report) as client:
             report(f"Авторизация выполнена. Ищу тикеты после {cutoff}...")
             tickets = client.iter_changed_tasks(cutoff, report)
             report(f"Найдено тикетов: {len(tickets)}")

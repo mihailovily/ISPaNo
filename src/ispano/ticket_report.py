@@ -249,7 +249,7 @@ class TicketReportExporter:
         status_aliases = load_status_aliases()
         customer_names = load_customer_names()
         unknown_organizations: set[str] = set()
-        with IntraserviceClient(self.settings, self.login, self.password) as client:
+        with IntraserviceClient(self.settings, self.login, self.password, report) as client:
             ticket_ids = client.list_ticket_ids_descending(until_id)
             report(f"Найдено тикетов для отчёта: {len(ticket_ids)}")
             rows: list[TicketReportRow] = []

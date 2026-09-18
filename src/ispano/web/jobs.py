@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,6 +10,8 @@ from queue import Queue
 from threading import Lock, Thread
 from typing import Literal
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "succeeded", "failed"]
 JobRunner = Callable[[Callable[[str], None]], Path]
@@ -72,6 +75,7 @@ class JobManager:
             try:
                 path = job.runner(report)
             except Exception as exc:  # The UI must receive a safe job failure state.
+                logger.exception("Web-задание %s (%s) завершилось с ошибкой.", job.id, job.kind)
                 with self._lock:
                     job.status = "failed"
                     job.error = str(exc) or type(exc).__name__

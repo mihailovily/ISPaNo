@@ -17,6 +17,7 @@ from ispano.settings import (
     TicketSummarySettings,
     WebSettings,
 )
+from ispano.intraservice.client import IntraserviceTimeoutError
 from ispano.web.app import create_app
 from ispano.web.jobs import JobManager
 
@@ -88,10 +89,16 @@ class WebApiTests(unittest.TestCase):
         return self.client.get("/api/session").json()["csrf"]
 
     def test_pages_and_api_require_login(self) -> None:
-        self.assertEqual(self.client.get("/").status_code, 401)
+        root = self.client.get("/", follow_redirects=False)
+        viewer = self.client.get("/viewer", follow_redirects=False)
+        self.assertEqual(root.status_code, 303)
+        self.assertEqual(root.headers["location"], "/login")
+        self.assertEqual(viewer.status_code, 303)
+        self.assertEqual(viewer.headers["location"], "/login")
         self.assertEqual(self.client.post("/api/jobs/json", json={}).status_code, 401)
         self._login()
         self.assertEqual(self.client.get("/").status_code, 200)
+        self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
 
     def test_json_job_validates_csrf_and_returns_download(self) -> None:
         csrf = self._login()
@@ -116,6 +123,7 @@ class WebApiTests(unittest.TestCase):
                 sleep(0.01)
 
         self.assertEqual(status["status"], "succeeded")
+        self.assertTrue(status["viewer_url"])
         self.assertEqual(self.client.get(status["download_url"]).status_code, 200)
 
     def test_report_rejects_invalid_input_and_unconfigured_ai(self) -> None:
@@ -131,3 +139,30 @@ class WebApiTests(unittest.TestCase):
             ).status_code,
             422,
         )
+
+    def test_failed_json_job_keeps_authentication_progress_without_writing_file(self) -> None:
+        csrf = self._login()
+
+        def fail_after_authentication(*_args, **kwargs):
+            (kwargs.get("report") or _args[2])("Авторизация в IntraService…")
+            raise IntraserviceTimeoutError("Тайм-аут авторизации в IntraService после 30.0 с.")
+
+        with self.assertLogs("ispano.web.jobs", "ERROR"):
+            with patch("ispano.web.app.create_json_export", side_effect=fail_after_authentication):
+                response = self.client.post(
+                    "/api/jobs/json",
+                    headers={"X-CSRF-Token": csrf},
+                    json={"since": "03.09.2026"},
+                )
+                self.assertEqual(response.status_code, 200)
+                job_id = response.json()["id"]
+                for _ in range(50):
+                    status = self.client.get(f"/api/jobs/{job_id}").json()
+                    if status["status"] == "failed":
+                        break
+                    sleep(0.01)
+
+        self.assertEqual(status["status"], "failed")
+        self.assertEqual(status["progress"], ["Авторизация в IntraService…"])
+        self.assertIn("Тайм-аут авторизации", status["error"])
+        self.assertFalse(list(Path(self.directory.name).iterdir()))
