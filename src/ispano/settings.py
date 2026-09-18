@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import bcrypt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -188,6 +189,40 @@ class TicketSummarySettings:
 
 
 @dataclass(frozen=True, slots=True)
+class WebSettings:
+    """Settings required only when the protected web interface is started."""
+
+    username: str
+    password_hash: str
+    session_secret: str
+    host: str
+    port: int
+
+    @classmethod
+    def from_env(cls) -> "WebSettings":
+        password_hash = _required("WEB_PASSWORD_HASH")
+        if not password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            raise ConfigurationError("WEB_PASSWORD_HASH должен быть bcrypt-хешем.")
+        try:
+            bcrypt.checkpw(b"", password_hash.encode())
+        except ValueError as exc:
+            raise ConfigurationError("WEB_PASSWORD_HASH должен быть корректным bcrypt-хешем.") from exc
+        session_secret = _required("WEB_SESSION_SECRET")
+        if len(session_secret) < 32:
+            raise ConfigurationError("WEB_SESSION_SECRET должен содержать не менее 32 символов.")
+        port = _positive_int("WEB_PORT", 8000)
+        if port > 65535:
+            raise ConfigurationError("WEB_PORT должен быть не больше 65535.")
+        return cls(
+            username=_required("WEB_USERNAME"),
+            password_hash=password_hash,
+            session_secret=session_secret,
+            host=(_env("WEB_HOST", "0.0.0.0") or "0.0.0.0").strip(),
+            port=port,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     """All settings. Telegram configuration is loaded only when requested."""
 
@@ -195,15 +230,22 @@ class AppSettings:
     export: ExportSettings
     ticket_summary: TicketSummarySettings
     telegram: TelegramSettings | None = None
+    web: WebSettings | None = None
 
     @classmethod
-    def from_env(cls, *, include_telegram: bool = False) -> "AppSettings":
+    def from_env(
+        cls, *, include_telegram: bool = False, include_web: bool = False
+    ) -> "AppSettings":
         return cls(
             intraservice=IntraserviceSettings.from_env(),
             export=ExportSettings.from_env(),
             ticket_summary=TicketSummarySettings.from_env(),
             telegram=TelegramSettings.from_env() if include_telegram else None,
+            web=WebSettings.from_env() if include_web else None,
         )
 
     def require_telegram(self) -> TelegramSettings:
         return self.telegram or TelegramSettings.from_env()
+
+    def require_web(self) -> WebSettings:
+        return self.web or WebSettings.from_env()

@@ -2,7 +2,7 @@ from datetime import datetime
 import unittest
 
 from ispano.models import ExportItem
-from ispano.serialization import serialize_legacy, serialize_v2
+from ispano.serialization import serialize_v2
 
 
 class SerializationTests(unittest.TestCase):
@@ -26,12 +26,6 @@ class SerializationTests(unittest.TestCase):
                     "events": None,
                 }
             ],
-        )
-
-    def test_legacy_shape_is_unchanged(self) -> None:
-        self.assertEqual(
-            serialize_legacy([self.item]),
-            [{"ticket": self.item.ticket, "chat": self.item.chat}],
         )
 
     def test_v2_normalizes_dates_and_ids(self) -> None:

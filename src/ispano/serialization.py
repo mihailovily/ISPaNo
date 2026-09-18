@@ -50,11 +50,6 @@ def _comment_v2(comment: dict[str, Any], timezone_name: str) -> dict[str, Any]:
     }
 
 
-def serialize_legacy(items: Iterable[ExportItem]) -> list[dict[str, Any]]:
-    """Keep the pre-v2 ``[{ticket, chat}]`` contract unchanged."""
-    return [{"ticket": item.ticket, "chat": item.chat} for item in items]
-
-
 def serialize_v2(
     items: Iterable[ExportItem],
     cutoff: datetime,
