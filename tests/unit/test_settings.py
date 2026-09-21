@@ -52,3 +52,39 @@ class TicketSummarySettingsTests(unittest.TestCase):
         self.assertEqual(settings.api_base_url, "http://ai.test/v1")
         self.assertEqual(settings.model, "test-model")
         self.assertEqual(settings.api_key, "key")
+
+    def test_loads_gigachat_defaults(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "TICKET_SUMMARY_PROVIDER": "gigachat",
+                "TICKET_SUMMARY_MODEL": "GigaChat",
+                "TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY": "authorization-key",
+            },
+            clear=True,
+        ):
+            settings = TicketSummarySettings.from_env()
+
+        self.assertTrue(settings.enabled)
+        self.assertEqual(settings.provider, "gigachat")
+        self.assertEqual(settings.api_base_url, "https://api.giga.chat/v1")
+        self.assertEqual(settings.gigachat_scope, "GIGACHAT_API_PERS")
+        self.assertTrue(settings.gigachat_verify_ssl)
+
+    def test_gigachat_requires_authorization_key(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"TICKET_SUMMARY_PROVIDER": "gigachat", "TICKET_SUMMARY_MODEL": "GigaChat"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "AUTHORIZATION_KEY"):
+                TicketSummarySettings.from_env()
+
+    def test_rejects_invalid_gigachat_verify_ssl_value(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"TICKET_SUMMARY_GIGACHAT_VERIFY_SSL": "sometimes"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "VERIFY_SSL"):
+                TicketSummarySettings.from_env()

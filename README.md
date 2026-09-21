@@ -28,6 +28,29 @@ poetry run ispano bot
 
 `export` записывает только канонический JSON v2 в `exports/` и атомарно обновляет `exports/latest.json`. `tickets` создаёт XLSX от самого свежего номера заявки до указанного включительно. Если настроены `TICKET_SUMMARY_API_BASE_URL` и `TICKET_SUMMARY_MODEL`, CLI предложит включить ИИ-суммаризацию.
 
+## ИИ-суммаризация и GigaChat
+
+По умолчанию `TICKET_SUMMARY_PROVIDER=generic`: приложение вызывает OpenAI-совместимый endpoint и при необходимости передаёт `TICKET_SUMMARY_API_KEY` как Bearer-токен.
+
+Для GigaChat настройте в `.env` authorization key из личного кабинета (не OAuth access token):
+
+```dotenv
+TICKET_SUMMARY_PROVIDER=gigachat
+TICKET_SUMMARY_API_BASE_URL=https://api.giga.chat/v1
+TICKET_SUMMARY_MODEL=GigaChat
+TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY=ваш_authorization_key
+TICKET_SUMMARY_GIGACHAT_SCOPE=GIGACHAT_API_PERS
+TICKET_SUMMARY_GIGACHAT_VERIFY_SSL=true
+```
+
+Приложение само получает и обновляет OAuth-токен, срок действия которого ограничен. Для ИП и юридических лиц замените scope на выданное GigaChat значение. Если в системе или Docker-контейнере не установлен сертификат Минцифры, можно временно установить `TICKET_SUMMARY_GIGACHAT_VERIFY_SSL=false`. Это снижает защищённость TLS-соединения и действует только на OAuth и API-запросы GigaChat; предпочтительно установить доверенный сертификат в ОС или контейнере.
+
+Проверить конфигурацию и доступные модели можно командой:
+
+```bash
+poetry run python scripts/test_ticket_summary.py --list-models
+```
+
 Telegram-бот доступен только ID из allowlist. Он формирует JSON в памяти и не пишет экспорт на диск.
 
 ## Веб-интерфейс

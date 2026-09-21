@@ -54,6 +54,16 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
+def _boolean(name: str, default: bool) -> bool:
+    """Read a strict boolean environment variable."""
+    raw = (_env(name, str(default)) or "").strip().casefold()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} должно быть логическим значением (true или false).")
+
+
 def _allowlist() -> frozenset[int]:
     raw = (_env("ALLOWED_TELEGRAM_USER_IDS", "") or "").strip()
     if not raw:
@@ -170,6 +180,11 @@ class TicketSummarySettings:
     api_base_url: str | None
     model: str | None
     api_key: str | None
+    provider: str = "generic"
+    gigachat_authorization_key: str | None = None
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    gigachat_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    gigachat_verify_ssl: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -178,13 +193,42 @@ class TicketSummarySettings:
 
     @classmethod
     def from_env(cls) -> "TicketSummarySettings":
-        api_base_url = (_env("TICKET_SUMMARY_API_BASE_URL", "") or "").strip().rstrip("/")
+        provider = (_env("TICKET_SUMMARY_PROVIDER", "generic") or "generic").strip().casefold()
+        if provider not in {"generic", "gigachat"}:
+            raise ConfigurationError(
+                "TICKET_SUMMARY_PROVIDER должен быть generic или gigachat."
+            )
+
+        default_base_url = "https://api.giga.chat/v1" if provider == "gigachat" else ""
+        api_base_url = (_env("TICKET_SUMMARY_API_BASE_URL", default_base_url) or "").strip().rstrip("/")
         model = (_env("TICKET_SUMMARY_MODEL", "") or "").strip()
         api_key = (_env("TICKET_SUMMARY_API_KEY", "") or "").strip()
+        authorization_key = (
+            _env("TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY", "") or ""
+        ).strip()
+        if provider == "gigachat" and not authorization_key:
+            raise ConfigurationError(
+                "Для TICKET_SUMMARY_PROVIDER=gigachat задайте "
+                "TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY."
+            )
         return cls(
             api_base_url=api_base_url or None,
             model=model or None,
             api_key=api_key or None,
+            provider=provider,
+            gigachat_authorization_key=authorization_key or None,
+            gigachat_scope=(
+                _env("TICKET_SUMMARY_GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
+                or "GIGACHAT_API_PERS"
+            ).strip(),
+            gigachat_oauth_url=(
+                _env(
+                    "TICKET_SUMMARY_GIGACHAT_OAUTH_URL",
+                    "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+                )
+                or ""
+            ).strip().rstrip("/"),
+            gigachat_verify_ssl=_boolean("TICKET_SUMMARY_GIGACHAT_VERIFY_SSL", True),
         )
 
 

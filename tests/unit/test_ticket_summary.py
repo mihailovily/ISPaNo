@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -143,3 +144,99 @@ class TicketHistorySummarizerTests(unittest.TestCase):
             TicketHistorySummarizer(self.settings).summarize([]),
             "Устройство отправлено. Ждём закрытия.",
         )
+
+    @patch("ispano.ticket_summary.uuid.uuid4", return_value="request-uuid")
+    @patch("ispano.ticket_summary.requests.post")
+    def test_gigachat_fetches_and_caches_oauth_token(self, post: Mock, _uuid: Mock) -> None:
+        oauth_response = Mock()
+        oauth_response.json.return_value = {
+            "access_token": "oauth-token",
+            "expires_at": time.time() + 3600,
+        }
+        completion_response = Mock()
+        completion_response.json.return_value = {
+            "choices": [{"message": {"content": "Ожидаются данные."}}]
+        }
+        post.side_effect = [oauth_response, completion_response, completion_response]
+        settings = TicketSummarySettings(
+            "https://api.giga.chat/v1",
+            "GigaChat",
+            None,
+            provider="gigachat",
+            gigachat_authorization_key="authorization-key",
+        )
+
+        summarizer = TicketHistorySummarizer(settings)
+        self.assertEqual(summarizer.summarize([]), "Ожидаются данные.")
+        self.assertEqual(summarizer.summarize([]), "Ожидаются данные.")
+
+        self.assertEqual(post.call_count, 3)
+        oauth_kwargs = post.call_args_list[0].kwargs
+        self.assertEqual(post.call_args_list[0].args[0], settings.gigachat_oauth_url)
+        self.assertEqual(oauth_kwargs["headers"]["Authorization"], "Basic authorization-key")
+        self.assertEqual(oauth_kwargs["headers"]["RqUID"], "request-uuid")
+        self.assertEqual(oauth_kwargs["data"], {"scope": "GIGACHAT_API_PERS"})
+        self.assertTrue(oauth_kwargs["verify"])
+        completion_kwargs = post.call_args_list[1].kwargs
+        self.assertEqual(completion_kwargs["headers"]["Authorization"], "Bearer oauth-token")
+        self.assertTrue(completion_kwargs["verify"])
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_gigachat_refreshes_expired_oauth_token(self, post: Mock) -> None:
+        expired = Mock()
+        expired.json.return_value = {"access_token": "old", "expires_at": time.time() - 1}
+        fresh = Mock()
+        fresh.json.return_value = {"access_token": "new", "expires_at": time.time() + 3600}
+        completion = Mock()
+        completion.json.return_value = {"choices": [{"message": {"content": "Готово."}}]}
+        post.side_effect = [expired, completion, fresh, completion]
+        settings = TicketSummarySettings(
+            "https://api.giga.chat/v1", "GigaChat", None, provider="gigachat",
+            gigachat_authorization_key="key",
+        )
+
+        summarizer = TicketHistorySummarizer(settings)
+        summarizer.summarize([])
+        summarizer.summarize([])
+
+        self.assertEqual(post.call_count, 4)
+        self.assertEqual(post.call_args_list[3].kwargs["headers"]["Authorization"], "Bearer new")
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_gigachat_oauth_failure_has_clear_error(self, post: Mock) -> None:
+        post.side_effect = requests.ConnectionError("certificate verify failed")
+        settings = TicketSummarySettings(
+            "https://api.giga.chat/v1", "GigaChat", None, provider="gigachat",
+            gigachat_authorization_key="key",
+        )
+
+        with patch("ispano.ticket_summary.time.sleep"):
+            with self.assertRaisesRegex(TicketSummaryError, "OAuth-токен GigaChat"):
+                TicketHistorySummarizer(settings).summarize([])
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_gigachat_verify_ssl_false_applies_to_oauth_and_completion(self, post: Mock) -> None:
+        oauth = Mock()
+        oauth.json.return_value = {"access_token": "token", "expires_at": time.time() + 3600}
+        completion = Mock()
+        completion.json.return_value = {"choices": [{"message": {"content": "Готово."}}]}
+        post.side_effect = [oauth, completion]
+        settings = TicketSummarySettings(
+            "https://api.giga.chat/v1", "GigaChat", None, provider="gigachat",
+            gigachat_authorization_key="key", gigachat_verify_ssl=False,
+        )
+
+        TicketHistorySummarizer(settings).summarize([])
+
+        self.assertFalse(post.call_args_list[0].kwargs["verify"])
+        self.assertFalse(post.call_args_list[1].kwargs["verify"])
+
+    @patch("ispano.ticket_summary.requests.post")
+    def test_generic_endpoint_does_not_receive_gigachat_tls_option(self, post: Mock) -> None:
+        response = Mock()
+        response.json.return_value = {"choices": [{"message": {"content": "Готово."}}]}
+        post.return_value = response
+
+        TicketHistorySummarizer(self.settings).summarize([])
+
+        self.assertNotIn("verify", post.call_args.kwargs)

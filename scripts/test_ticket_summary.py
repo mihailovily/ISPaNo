@@ -20,21 +20,10 @@ from ispano.settings import TicketSummarySettings  # noqa: E402
 from ispano.ticket_summary import TicketHistorySummarizer, TicketSummaryError  # noqa: E402
 
 
-def _headers(settings: TicketSummarySettings) -> dict[str, str]:
-    headers = {"Accept": "application/json"}
-    if settings.api_key:
-        headers["Authorization"] = f"Bearer {settings.api_key}"
-    return headers
-
-
-def _show_available_models(settings: TicketSummarySettings, *, list_all: bool) -> bool | None:
+def _show_available_models(summarizer: TicketHistorySummarizer, *, list_all: bool) -> bool | None:
     """List models when the endpoint implements OpenAI's optional `/models` API."""
     try:
-        response = requests.get(
-            f"{settings.api_base_url}/models",
-            headers=_headers(settings),
-            timeout=(10, 30),
-        )
+        response = summarizer.get("models", timeout=(10, 30))
         response.raise_for_status()
         payload: Any = response.json()
         models = payload.get("data", []) if isinstance(payload, dict) else []
@@ -51,9 +40,9 @@ def _show_available_models(settings: TicketSummarySettings, *, list_all: bool) -
             if list_all:
                 print("Все доступные модели:")
             for model_id in (model_ids if list_all else []):
-                marker = "  <- выбрана" if model_id == settings.model else ""
+                marker = "  <- выбрана" if model_id == summarizer.settings.model else ""
                 print(f"- {model_id}{marker}")
-            if settings.model not in model_ids:
+            if summarizer.settings.model not in model_ids:
                 print(
                     "Ошибка конфигурации: указанная TICKET_SUMMARY_MODEL отсутствует "
                     "в списке. Выберите одну из доступных моделей."
@@ -85,9 +74,18 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"Endpoint: {settings.api_base_url}")
+    print(f"Провайдер: {settings.provider}")
     print(f"Модель: {settings.model}")
-    print(f"API-ключ: {'задан' if settings.api_key else 'не задан'}")
-    if _show_available_models(settings, list_all=args.list_models) is False:
+    if settings.provider == "gigachat":
+        print(
+            "Authorization key: "
+            f"{'задан' if settings.gigachat_authorization_key else 'не задан'}"
+        )
+        print(f"Проверка TLS: {'включена' if settings.gigachat_verify_ssl else 'ОТКЛЮЧЕНА'}")
+    else:
+        print(f"API-ключ: {'задан' if settings.api_key else 'не задан'}")
+    summarizer = TicketHistorySummarizer(settings)
+    if _show_available_models(summarizer, list_all=args.list_models) is False:
         return 2
 
     history = [
@@ -108,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     print("Отправляю тестовую историю в `/chat/completions`...")
     try:
-        result = TicketHistorySummarizer(settings).summarize(history)
+        result = summarizer.summarize(history)
     except TicketSummaryError as exc:
         print(f"Тест не пройден: {exc}")
         return 1
