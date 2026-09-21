@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime
 from typing import Any, Callable
@@ -10,6 +11,9 @@ import requests
 
 from ..settings import IntraserviceSettings
 from .parsing import parse_api_datetime, parse_json_or_die, parse_task_list_ids, parse_ticket_history
+
+logger = logging.getLogger(__name__)
+ProgressReporter = Callable[[str], None]
 
 
 class AuthenticationError(RuntimeError):
@@ -27,10 +31,17 @@ class IntraserviceResponseError(RuntimeError):
 class IntraserviceClient:
     """Session-owning client for the IntraService endpoints used by exports."""
 
-    def __init__(self, settings: IntraserviceSettings, login: str, password: str) -> None:
+    def __init__(
+        self,
+        settings: IntraserviceSettings,
+        login: str,
+        password: str,
+        report: ProgressReporter = print,
+    ) -> None:
         self.settings = settings
         self.login_name = login
         self.password = password
+        self.report = report
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -51,6 +62,8 @@ class IntraserviceClient:
         self.session.close()
 
     def login(self) -> None:
+        self.report("Авторизация в IntraService…")
+        started_at = time.monotonic()
         try:
             response = self.session.post(
                 f"{self.settings.base_url}/",
@@ -64,8 +77,21 @@ class IntraserviceClient:
             )
             response.raise_for_status()
         except requests.Timeout as exc:
-            raise IntraserviceTimeoutError("Тайм-аут авторизации в IntraService.") from exc
+            elapsed = time.monotonic() - started_at
+            connect_timeout, read_timeout = self.settings.request_timeout
+            logger.exception(
+                "Тайм-аут авторизации в IntraService после %.1f с (connect/read: %s/%s с).",
+                elapsed,
+                connect_timeout,
+                read_timeout,
+            )
+            raise IntraserviceTimeoutError(
+                "Тайм-аут авторизации в IntraService "
+                f"после {elapsed:.1f} с (connect/read timeout: "
+                f"{connect_timeout}/{read_timeout} с)."
+            ) from exc
         except requests.RequestException as exc:
+            logger.exception("Ошибка авторизации в IntraService.")
             raise AuthenticationError(f"Ошибка авторизации в IntraService: {exc}") from exc
 
         if not self.session.cookies.get(".INTRASERVICE"):
@@ -73,6 +99,7 @@ class IntraserviceClient:
                 "Авторизация не прошла: cookie .INTRASERVICE не появилась. "
                 "Проверь логин и пароль."
             )
+        logger.info("Авторизация в IntraService успешно завершена за %.1f с.", time.monotonic() - started_at)
 
     def fetch_tasks_page(self, page: int) -> dict[str, Any]:
         try:

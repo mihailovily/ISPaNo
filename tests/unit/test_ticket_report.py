@@ -6,8 +6,13 @@ import unittest
 from unittest.mock import Mock, patch
 
 from openpyxl import load_workbook
+import requests
 
-from ispano.intraservice.client import IntraserviceClient, IntraserviceResponseError
+from ispano.intraservice.client import (
+    IntraserviceClient,
+    IntraserviceResponseError,
+    IntraserviceTimeoutError,
+)
 from ispano.intraservice.parsing import TicketCard, parse_task_list_ids, parse_ticket_card
 from ispano.settings import IntraserviceSettings
 from ispano.ticket_report import (
@@ -336,3 +341,17 @@ class TicketListClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(IntraserviceResponseError, "20 не найден"):
             client.list_ticket_ids_descending(20)
+
+    @patch("ispano.intraservice.client.time.monotonic", side_effect=(10.0, 42.5))
+    def test_login_timeout_reports_elapsed_time_and_timeout_configuration(self, _: Mock) -> None:
+        progress: list[str] = []
+        client = IntraserviceClient(self.settings, "login", "password", progress.append)
+        client.session.post = Mock(side_effect=requests.Timeout("timed out"))
+
+        with self.assertLogs("ispano.intraservice.client", "ERROR"):
+            with self.assertRaisesRegex(
+                IntraserviceTimeoutError, r"после 32\.5 с \(connect/read timeout: 1/1 с\)"
+            ):
+                client.login()
+
+        self.assertEqual(progress, ["Авторизация в IntraService…"])

@@ -14,8 +14,9 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from ..intraservice.parsing import parse_dot_datetime
-from ..serialization import serialize_v2
 from ..settings import AppSettings
+from ..services import fetch_export_items
+from ..serialization import serialize_v2
 from .progress import update_status
 
 logger = logging.getLogger(__name__)
@@ -67,9 +68,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.info(line)
         loop.call_soon_threadsafe(queue.put_nowait, line)
 
-    exporter = context.application.bot_data["exporter"]
     try:
-        items = await loop.run_in_executor(None, exporter.export, cutoff, report)
+        items = await loop.run_in_executor(None, fetch_export_items, settings, cutoff, report)
         payload = serialize_v2(items, cutoff, settings.export.timezone)
     except Exception as exc:  # noqa: BLE001 - user receives a useful failure message
         logger.exception("Ошибка экспорта")

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISPaNo — переписки</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/viewer.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Основная навигация">
+      <a class="brand" href="/">ISPaNo</a>
+      <nav><ul class="nav-list"><li><a class="nav-item" href="/">Выгрузки</a></li><li><a class="nav-item" href="/viewer" aria-current="page">Переписки</a></li></ul></nav>
+    </aside>
+    <main class="workspace">
+      <header class="mobile-bar"><a class="brand" href="/">ISPaNo</a></header>
+      <a class="back-link" href="/">Вернуться к выгрузкам</a>
+      <header class="viewer-heading"><h1 class="page-title">Переписки</h1><span id="ticket-count" class="viewer-count"></span></header>
+      <div id="app" class="viewer-list" aria-live="polite" aria-busy="true"><p class="viewer-message">Загружаем выгрузку…</p></div>
+    </main>
+  </div>
+</body>
+</html>

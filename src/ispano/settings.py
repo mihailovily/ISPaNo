@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import bcrypt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -51,6 +52,16 @@ def _positive_int(name: str, default: int) -> int:
     if value <= 0:
         raise ConfigurationError(f"{name} должно быть положительным целым числом.")
     return value
+
+
+def _boolean(name: str, default: bool) -> bool:
+    """Read a strict boolean environment variable."""
+    raw = (_env(name, str(default)) or "").strip().casefold()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} должно быть логическим значением (true или false).")
 
 
 def _allowlist() -> frozenset[int]:
@@ -169,6 +180,11 @@ class TicketSummarySettings:
     api_base_url: str | None
     model: str | None
     api_key: str | None
+    provider: str = "generic"
+    gigachat_authorization_key: str | None = None
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    gigachat_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    gigachat_verify_ssl: bool = True
 
     @property
     def enabled(self) -> bool:
@@ -177,13 +193,76 @@ class TicketSummarySettings:
 
     @classmethod
     def from_env(cls) -> "TicketSummarySettings":
-        api_base_url = (_env("TICKET_SUMMARY_API_BASE_URL", "") or "").strip().rstrip("/")
+        provider = (_env("TICKET_SUMMARY_PROVIDER", "generic") or "generic").strip().casefold()
+        if provider not in {"generic", "gigachat"}:
+            raise ConfigurationError(
+                "TICKET_SUMMARY_PROVIDER должен быть generic или gigachat."
+            )
+
+        default_base_url = "https://api.giga.chat/v1" if provider == "gigachat" else ""
+        api_base_url = (_env("TICKET_SUMMARY_API_BASE_URL", default_base_url) or "").strip().rstrip("/")
         model = (_env("TICKET_SUMMARY_MODEL", "") or "").strip()
         api_key = (_env("TICKET_SUMMARY_API_KEY", "") or "").strip()
+        authorization_key = (
+            _env("TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY", "") or ""
+        ).strip()
+        if provider == "gigachat" and not authorization_key:
+            raise ConfigurationError(
+                "Для TICKET_SUMMARY_PROVIDER=gigachat задайте "
+                "TICKET_SUMMARY_GIGACHAT_AUTHORIZATION_KEY."
+            )
         return cls(
             api_base_url=api_base_url or None,
             model=model or None,
             api_key=api_key or None,
+            provider=provider,
+            gigachat_authorization_key=authorization_key or None,
+            gigachat_scope=(
+                _env("TICKET_SUMMARY_GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
+                or "GIGACHAT_API_PERS"
+            ).strip(),
+            gigachat_oauth_url=(
+                _env(
+                    "TICKET_SUMMARY_GIGACHAT_OAUTH_URL",
+                    "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+                )
+                or ""
+            ).strip().rstrip("/"),
+            gigachat_verify_ssl=_boolean("TICKET_SUMMARY_GIGACHAT_VERIFY_SSL", True),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class WebSettings:
+    """Settings required only when the protected web interface is started."""
+
+    username: str
+    password_hash: str
+    session_secret: str
+    host: str
+    port: int
+
+    @classmethod
+    def from_env(cls) -> "WebSettings":
+        password_hash = _required("WEB_PASSWORD_HASH")
+        if not password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            raise ConfigurationError("WEB_PASSWORD_HASH должен быть bcrypt-хешем.")
+        try:
+            bcrypt.checkpw(b"", password_hash.encode())
+        except ValueError as exc:
+            raise ConfigurationError("WEB_PASSWORD_HASH должен быть корректным bcrypt-хешем.") from exc
+        session_secret = _required("WEB_SESSION_SECRET")
+        if len(session_secret) < 32:
+            raise ConfigurationError("WEB_SESSION_SECRET должен содержать не менее 32 символов.")
+        port = _positive_int("WEB_PORT", 8000)
+        if port > 65535:
+            raise ConfigurationError("WEB_PORT должен быть не больше 65535.")
+        return cls(
+            username=_required("WEB_USERNAME"),
+            password_hash=password_hash,
+            session_secret=session_secret,
+            host=(_env("WEB_HOST", "0.0.0.0") or "0.0.0.0").strip(),
+            port=port,
         )
 
 
@@ -195,15 +274,22 @@ class AppSettings:
     export: ExportSettings
     ticket_summary: TicketSummarySettings
     telegram: TelegramSettings | None = None
+    web: WebSettings | None = None
 
     @classmethod
-    def from_env(cls, *, include_telegram: bool = False) -> "AppSettings":
+    def from_env(
+        cls, *, include_telegram: bool = False, include_web: bool = False
+    ) -> "AppSettings":
         return cls(
             intraservice=IntraserviceSettings.from_env(),
             export=ExportSettings.from_env(),
             ticket_summary=TicketSummarySettings.from_env(),
             telegram=TelegramSettings.from_env() if include_telegram else None,
+            web=WebSettings.from_env() if include_web else None,
         )
 
     def require_telegram(self) -> TelegramSettings:
         return self.telegram or TelegramSettings.from_env()
+
+    def require_web(self) -> WebSettings:
+        return self.web or WebSettings.from_env()

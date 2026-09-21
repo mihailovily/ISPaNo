@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISPaNo — вход</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-card" aria-labelledby="login-title">
+    <a class="brand" href="/login">ISPaNo</a>
+    <h1 id="login-title" class="auth-card__title">Вход</h1>
+    <form id="login" class="form-stack">
+      <div class="field"><label class="field__label" for="username">Имя пользователя</label><input id="username" class="input" autocomplete="username" required></div>
+      <div class="field"><label class="field__label" for="password">Пароль</label><input id="password" class="input" type="password" autocomplete="current-password" required></div>
+      <button id="login-submit" class="button button--primary" type="submit">Войти</button>
+    </form>
+    <p id="error" class="auth-error" role="alert" aria-live="assertive"></p>
+  </main>
+  <script>
+    document.getElementById("login").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const submit = document.getElementById("login-submit");
+      const error = document.getElementById("error");
+      submit.disabled = true;
+      submit.classList.add("is-loading");
+      submit.setAttribute("aria-busy", "true");
+      error.textContent = "";
+      try {
+        const response = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.value, password: password.value }) });
+        if (response.ok) location.assign("/");
+        else error.textContent = (await response.json()).detail || "Не удалось войти.";
+      } catch (requestError) {
+        error.textContent = "Не удалось связаться с сервером. Попробуйте ещё раз.";
+      } finally {
+        submit.disabled = false;
+        submit.classList.remove("is-loading");
+        submit.removeAttribute("aria-busy");
+      }
+    });
+  </script>
+</body>
+</html>

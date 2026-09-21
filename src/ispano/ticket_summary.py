@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -15,6 +16,58 @@ from .settings import TicketSummarySettings
 
 class TicketSummaryError(RuntimeError):
     """The configured AI service could not produce a usable ticket summary."""
+
+
+class GigaChatOAuthClient:
+    """Fetch and cache the short-lived OAuth token required by GigaChat."""
+
+    refresh_margin_seconds = 60
+
+    def __init__(self, settings: TicketSummarySettings) -> None:
+        self.settings = settings
+        self._access_token: str | None = None
+        self._expires_at: float = 0
+
+    def authorization_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._get_access_token()}"}
+
+    def _get_access_token(self) -> str:
+        if self._access_token and time.time() < self._expires_at - self.refresh_margin_seconds:
+            return self._access_token
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "RqUID": str(uuid.uuid4()),
+            "Authorization": f"Basic {self.settings.gigachat_authorization_key}",
+        }
+        try:
+            response = requests.post(
+                self.settings.gigachat_oauth_url,
+                headers=headers,
+                data={"scope": self.settings.gigachat_scope},
+                timeout=(10, 30),
+                verify=self.settings.gigachat_verify_ssl,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            access_token = payload["access_token"]
+            expires_at = float(payload["expires_at"])
+        except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+            raise TicketSummaryError(
+                "Не удалось получить OAuth-токен GigaChat. Проверьте authorization key, "
+                "scope и TLS-настройки."
+            ) from exc
+
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise TicketSummaryError("GigaChat вернул пустой OAuth-токен.")
+        # The documented value is Unix seconds. Accept Unix milliseconds too,
+        # so an upstream representation change does not cause token refreshes per request.
+        if expires_at > 100_000_000_000:
+            expires_at /= 1000
+        self._access_token = access_token
+        self._expires_at = expires_at
+        return access_token
 
 
 class TicketHistorySummarizer:
@@ -28,6 +81,9 @@ class TicketHistorySummarizer:
         if not settings.enabled:
             raise ValueError("ИИ-суммаризация не настроена.")
         self.settings = settings
+        self._gigachat_oauth = (
+            GigaChatOAuthClient(settings) if settings.provider == "gigachat" else None
+        )
 
     def summarize(self, history: list[dict[str, Any]]) -> str:
         """Return a non-empty status, retrying transient transport/API failures."""
@@ -123,26 +179,50 @@ class TicketHistorySummarizer:
     def _request_completion(
         self, messages: list[dict[str, str]], max_length: int
     ) -> str:
-        headers = {"Content-Type": "application/json"}
-        if self.settings.api_key:
-            headers["Authorization"] = f"Bearer {self.settings.api_key}"
+        headers = self.request_headers(content_type="application/json")
         payload = {
             "model": self.settings.model,
             "messages": messages,
             "temperature": 0.1,
             "stream": False,
         }
+        request_kwargs: dict[str, Any] = {
+            "headers": headers,
+            "json": payload,
+            "timeout": (10, 60),
+        }
+        if self.settings.provider == "gigachat":
+            request_kwargs["verify"] = self.settings.gigachat_verify_ssl
         response = requests.post(
             f"{self.settings.api_base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=(10, 60),
+            **request_kwargs,
         )
         response.raise_for_status()
         content = self._extract_content(response)
         if not isinstance(content, str) or not (result := content.strip()):
             raise TicketSummaryError("ИИ вернул пустой или некорректный результат.")
         return result[:max_length]
+
+    def request_headers(self, *, content_type: str | None = None) -> dict[str, str]:
+        """Return authorization headers for a request to the configured API."""
+        headers = {"Accept": "application/json"}
+        if content_type:
+            headers["Content-Type"] = content_type
+        if self._gigachat_oauth:
+            headers.update(self._gigachat_oauth.authorization_headers())
+        elif self.settings.api_key:
+            headers["Authorization"] = f"Bearer {self.settings.api_key}"
+        return headers
+
+    def get(self, path: str, *, timeout: tuple[int, int]) -> requests.Response:
+        """Issue a GET request using the provider's authorization and TLS policy."""
+        request_kwargs: dict[str, Any] = {
+            "headers": self.request_headers(),
+            "timeout": timeout,
+        }
+        if self.settings.provider == "gigachat":
+            request_kwargs["verify"] = self.settings.gigachat_verify_ssl
+        return requests.get(f"{self.settings.api_base_url}/{path.lstrip('/')}", **request_kwargs)
 
     @staticmethod
     def _first_sentence(value: str) -> str:

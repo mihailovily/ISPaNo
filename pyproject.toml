@@ -1,7 +1,7 @@
 [project]
 name = "tickets-servicedesk-parse"
 version = "0.2.0"
-description = "Авто-парсинг тикетов Intraservice и Telegram-бот для выгрузки JSON"
+description = "Экспорт тикетов IntraService через CLI, Telegram и защищённый web-интерфейс"
 authors = [
     {name = "mihailovily"}
 ]
@@ -12,7 +12,11 @@ dependencies = [
     "openpyxl (>=3.1.5,<4.0.0)",
     "python-dotenv (>=1.2.3,<2.0.0)",
     "tzdata (>=2025.2,<2027.0.0)",
-    "python-telegram-bot (>=22.0,<23.0.0)"
+    "python-telegram-bot (>=22.0,<23.0.0)",
+    "fastapi (>=0.115,<1.0)",
+    "uvicorn (>=0.34,<1.0)",
+    "bcrypt (>=4.0,<6.0)",
+    "itsdangerous (>=2.2,<3.0)"
 ]
 
 [project.scripts]
