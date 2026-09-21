@@ -113,6 +113,7 @@ def create_app(settings: AppSettings) -> FastAPI:
     async def asset(request: Request, filename: str) -> FileResponse:
         media_types = {
             "app.js": "text/javascript",
+            "favicon.svg": "image/svg+xml",
             "viewer.js": "text/javascript",
             "styles.css": "text/css",
         }
