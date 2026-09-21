@@ -96,9 +96,14 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(viewer.status_code, 303)
         self.assertEqual(viewer.headers["location"], "/login")
         self.assertEqual(self.client.post("/api/jobs/json", json={}).status_code, 401)
+        self.assertEqual(self.client.get("/assets/styles.css").status_code, 200)
+        self.assertEqual(self.client.get("/assets/app.js").status_code, 401)
         self._login()
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
+        stylesheet = self.client.get("/assets/styles.css")
+        self.assertEqual(stylesheet.status_code, 200)
+        self.assertIn("text/css", stylesheet.headers["content-type"])
 
     def test_json_job_validates_csrf_and_returns_download(self) -> None:
         csrf = self._login()

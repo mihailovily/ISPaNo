@@ -1,3 +1,68 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ISPaNo</title><style>:root{color:#263238;font-family:"Segoe UI",sans-serif}body{margin:0;background:#f4f7f6}.container{max-width:900px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between}section{margin:18px 0;padding:20px;background:#fff;border-radius:8px;box-shadow:0 2px 8px #0000000d}label,input,button{margin:.4rem 0}input{box-sizing:border-box;width:100%;max-width:20rem;padding:.55rem}button{padding:.6rem .85rem;border:0;border-radius:4px;background:#1769aa;color:#fff;cursor:pointer}button:disabled{cursor:wait;opacity:.55}.secondary{background:#546e7a}.status{min-height:1.4rem;padding:.75rem;white-space:pre-wrap;background:#f6f8fa}.status.error{color:#a22}.hidden{display:none}.result-link{margin-right:.75rem}</style><script src="/assets/app.js" defer></script></head>
-<body><main class="container"><header><div><h1>ISPaNo</h1><span id="user"></span></div><button id="logout" class="secondary" disabled>Выйти</button></header><section><h2>JSON-выгрузка</h2><p>Получите тикеты и их переписки, затем скачайте JSON или откройте viewer.</p><form id="json-form"><label>Изменены после<br><input id="since" placeholder="03.09.2026 14:30" required></label><br><button type="submit" disabled>Создать JSON</button></form><div id="json-status" class="status">Проверяю сессию…</div></section><section><h2>Табличный отчёт</h2><p>Выгружает заявки от самого свежего номера до указанного включительно.</p><form id="report-form"><label>Нижняя граница ID<br><input id="ticket-id" type="number" min="1" required></label><label id="ai-row" class="hidden"><input id="use-ai" type="checkbox"> Использовать ИИ-суммаризацию</label><br><button type="submit" disabled>Создать XLSX</button></form><div id="report-status" class="status">Проверяю сессию…</div></section><section><h2>Локальный JSON v2</h2><p>Выберите ранее созданный файл: он будет прочитан только вашим браузером.</p><input id="local-json" type="file" accept="application/json,.json"><button id="open-local" type="button" disabled>Открыть viewer</button><div id="local-status" class="status"></div></section></main></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISPaNo — выгрузки</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Основная навигация">
+      <a class="brand" href="/">ISPaNo<span class="brand__subline">Операционный центр</span></a>
+      <nav>
+        <ul class="nav-list"><li><a class="nav-item" href="/" aria-current="page">Выгрузки</a></li></ul>
+      </nav>
+      <div class="sidebar__footer">
+        <span id="user" class="user-name" aria-label="Текущий пользователь"></span>
+        <button id="logout" class="button button--secondary" type="button" disabled>Выйти</button>
+      </div>
+    </aside>
+    <main class="workspace">
+      <header class="mobile-bar">
+        <a class="brand" href="/">ISPaNo</a>
+        <button id="mobile-logout" class="button button--secondary" type="button" disabled>Выйти</button>
+      </header>
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Выгрузки IntraService</p>
+          <h1 id="page-title" class="page-title">Соберите данные без ручной рутины.</h1>
+          <p class="lead">Запустите нужный сценарий, наблюдайте за очередью и заберите готовый результат в одном рабочем пространстве.</p>
+        </div>
+        <aside class="hero__note"><strong>Одна очередь</strong>Задания выполняются последовательно. Прогресс сохранится на этой странице, пока процесс запущен.</aside>
+      </section>
+
+      <div class="export-grid">
+        <section class="panel" aria-labelledby="json-title">
+          <header class="panel__header"><div><span class="panel__kicker">JSON v2</span><h2 id="json-title" class="panel__title">Переписки и тикеты</h2><p class="panel__description">Соберите изменённые заявки и их полную историю для дальнейшей работы.</p></div></header>
+          <form id="json-form" class="form-stack">
+            <div class="field"><label class="field__label" for="since">Изменены после</label><input id="since" class="input" type="datetime-local" required aria-describedby="since-hint"><p id="since-hint" class="field__hint">Можно выбрать дату и время или оставить точное время отсечения.</p></div>
+            <button class="button button--primary" type="submit" disabled>Создать JSON</button>
+          </form>
+          <div id="json-status" class="job-status" aria-live="polite" aria-atomic="true"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="report-title">
+          <header class="panel__header"><div><span class="panel__kicker">XLSX</span><h2 id="report-title" class="panel__title">Табличный отчёт</h2><p class="panel__description">Выгрузите заявки от текущего номера до указанной нижней границы.</p></div></header>
+          <form id="report-form" class="form-stack">
+            <div class="field"><label class="field__label" for="ticket-id">Нижняя граница ID</label><input id="ticket-id" class="input" type="number" min="1" inputmode="numeric" required aria-describedby="ticket-id-hint"><p id="ticket-id-hint" class="field__hint">Введите положительный номер заявки.</p></div>
+            <label id="ai-row" class="choice hidden" for="use-ai"><input id="use-ai" type="checkbox">Использовать ИИ-суммаризацию</label>
+            <button class="button button--primary" type="submit" disabled>Создать XLSX</button>
+          </form>
+          <div id="report-status" class="job-status" aria-live="polite" aria-atomic="true"></div>
+        </section>
+      </div>
+
+      <section class="panel panel--wide" aria-labelledby="local-title">
+        <header class="panel__header"><div><span class="panel__kicker">Локальный просмотр</span><h2 id="local-title" class="panel__title">Открыть JSON v2</h2><p class="panel__description">Файл читается только браузером и не отправляется на сервер.</p></div></header>
+        <div class="local-layout">
+          <div><input id="local-json" class="file-input" type="file" accept="application/json,.json"><label class="file-dropzone" for="local-json"><span class="file-dropzone__title" id="local-file-title">Выбрать файл JSON</span><span class="file-dropzone__detail">Поддерживается только экспорт формата v2.</span></label></div>
+          <button id="open-local" class="button button--secondary" type="button" disabled>Открыть переписки</button>
+        </div>
+        <div id="local-status" class="job-status" aria-live="polite" aria-atomic="true"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

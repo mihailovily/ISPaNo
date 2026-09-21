@@ -1,2 +1,24 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ISPaNo — переписки</title><style>:root{font-family:"Segoe UI",sans-serif;color:#263238}body{margin:0;padding:24px;background:#f4f7f6}.container{max-width:1000px;margin:auto}.ticket{margin:0 0 15px;background:#fff;border-radius:8px;box-shadow:0 2px 8px #0000000d}.ticket-header{display:flex;width:100%;text-align:left;justify-content:space-between;gap:16px;align-items:center;padding:15px 20px;background:#ecf0f1;border:0;border-left:4px solid #3498db;cursor:pointer}.ticket-body{display:none;padding:20px}.ticket.open .ticket-body{display:block}.chat-msg{margin:12px 0;padding:12px;border:1px solid #e1e8ed;border-left:4px solid #2ecc71;border-radius:6px}.chat-text,.ticket-desc{white-space:pre-wrap}.meta{color:#607d8b;font-size:.9em}.error{background:#fff;padding:16px}</style><script src="/assets/viewer.js" defer></script></head><body><main class="container"><p><a href="/">← К заданиям</a></p><h1>Тикеты и переписки</h1><div id="app" class="error">Загрузка…</div></main></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISPaNo — переписки</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/viewer.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Основная навигация">
+      <a class="brand" href="/">ISPaNo<span class="brand__subline">Операционный центр</span></a>
+      <nav><ul class="nav-list"><li><a class="nav-item" href="/">Выгрузки</a></li><li><a class="nav-item" href="/viewer" aria-current="page">Переписки</a></li></ul></nav>
+    </aside>
+    <main class="workspace">
+      <header class="mobile-bar"><a class="brand" href="/">ISPaNo</a></header>
+      <a class="back-link" href="/">Вернуться к выгрузкам</a>
+      <header class="viewer-heading"><div><p class="eyebrow">JSON v2</p><h1 class="page-title">Тикеты и переписки</h1></div><span id="ticket-count" class="viewer-count"></span></header>
+      <div id="app" class="viewer-list" aria-live="polite" aria-busy="true"><p class="viewer-message">Загружаем выгрузку…</p></div>
+    </main>
+  </div>
+</body>
+</html>

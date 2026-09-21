@@ -1,2 +1,45 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ISPaNo — вход</title><style>body{font-family:Segoe UI,sans-serif;background:#f4f7f6;margin:0;display:grid;min-height:100vh;place-items:center}main{background:#fff;padding:2rem;border-radius:10px;box-shadow:0 2px 12px #0002;width:min(22rem,85vw)}label,input,button{display:block;width:100%;box-sizing:border-box;margin:.5rem 0}input,button{padding:.7rem}button{background:#1769aa;color:#fff;border:0;border-radius:4px;cursor:pointer}.error{color:#a22;min-height:1.4rem}</style></head><body><main><h1>ISPaNo</h1><p>Войдите для работы с выгрузками.</p><form id="login"><label>Имя пользователя<input id="username" autocomplete="username" required></label><label>Пароль<input id="password" type="password" autocomplete="current-password" required></label><button>Войти</button></form><p id="error" class="error"></p></main><script>document.getElementById('login').addEventListener('submit',async(event)=>{event.preventDefault();const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username.value,password:password.value})});if(response.ok)location.assign('/');else error.textContent=(await response.json()).detail||'Не удалось войти.'});</script></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ISPaNo — вход</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-card" aria-labelledby="login-title">
+    <a class="brand" href="/login">ISPaNo<span class="brand__subline">Операционный центр</span></a>
+    <h1 id="login-title" class="auth-card__title">Вход в рабочее пространство</h1>
+    <p class="auth-card__lead">Авторизуйтесь, чтобы запустить защищённые выгрузки IntraService.</p>
+    <form id="login" class="form-stack">
+      <div class="field"><label class="field__label" for="username">Имя пользователя</label><input id="username" class="input" autocomplete="username" required></div>
+      <div class="field"><label class="field__label" for="password">Пароль</label><input id="password" class="input" type="password" autocomplete="current-password" required></div>
+      <button id="login-submit" class="button button--primary" type="submit">Войти</button>
+    </form>
+    <p id="error" class="auth-error" role="alert" aria-live="assertive"></p>
+  </main>
+  <script>
+    document.getElementById("login").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const submit = document.getElementById("login-submit");
+      const error = document.getElementById("error");
+      submit.disabled = true;
+      submit.classList.add("is-loading");
+      submit.setAttribute("aria-busy", "true");
+      error.textContent = "";
+      try {
+        const response = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: username.value, password: password.value }) });
+        if (response.ok) location.assign("/");
+        else error.textContent = (await response.json()).detail || "Не удалось войти.";
+      } catch (requestError) {
+        error.textContent = "Не удалось связаться с сервером. Попробуйте ещё раз.";
+      } finally {
+        submit.disabled = false;
+        submit.classList.remove("is-loading");
+        submit.removeAttribute("aria-busy");
+      }
+    });
+  </script>
+</body>
+</html>

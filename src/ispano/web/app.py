@@ -111,10 +111,16 @@ def create_app(settings: AppSettings) -> FastAPI:
 
     @app.get("/assets/{filename}")
     async def asset(request: Request, filename: str) -> FileResponse:
-        _require_user(request)
-        if filename not in {"app.js", "viewer.js"}:
+        media_types = {
+            "app.js": "text/javascript",
+            "viewer.js": "text/javascript",
+            "styles.css": "text/css",
+        }
+        if filename not in media_types:
             raise HTTPException(status_code=404, detail="Ресурс не найден.")
-        return FileResponse(WEB_ROOT / filename, media_type="text/javascript")
+        if filename != "styles.css":
+            _require_user(request)
+        return FileResponse(WEB_ROOT / filename, media_type=media_types[filename])
 
     @app.post("/api/jobs/json")
     async def start_json_job(request: Request) -> dict[str, object]:
