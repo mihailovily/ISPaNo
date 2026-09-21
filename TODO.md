@@ -7,16 +7,18 @@
 - [x] клиент IntraService с timeout и query-параметрами пагинации;
 - [x] чистый парсинг HTML и дат;
 - [x] канонический JSON v2 и атомарная запись;
-- [x] CLI `ispano export` / `ispano bot`;
+- [x] CLI `ispano export` / `ispano tickets` / `ispano bot` / `ispano web`;
 - [x] Telegram-прогресс без блокировки event loop;
-- [x] безопасный viewer в `web/`;
+- [x] защищённый web-интерфейс с последовательной очередью и viewer в `web/`;
 - [x] атомарный `exports/latest.json`;
-- [x] обновлённые README, `.env.example` и Docker-запуск;
+- [x] XLSX-отчёт с локальными справочниками и опциональной AI-суммаризацией;
+- [x] AI-суммаризация через OpenAI-совместимый endpoint и GigaChat;
+- [x] актуальные README, `.env.example`, Docker-запуск и практическая документация;
 - [x] базовые unit-тесты.
 
 ## Следующие шаги
 
-1. Подключить `poetry check`, unit-тесты, линтер и type-checker в CI.
+1. Подключить линтер и type-checker в CI; `poetry check` и unit-тесты уже выполняются.
 2. Добавить HTTP fixtures для конкретной версии IntraService и интеграционные тесты пагинации.
 3. Решить, нужен ли отдельный scheduler для регулярных экспортов.
 4. При появлении потребителей v2 описать JSON Schema и версионирование изменений.
